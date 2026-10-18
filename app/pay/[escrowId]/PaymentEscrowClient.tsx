@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 
 import EscrowCountdown from "@/components/payment/EscrowCountdown";
 import { TrustBadge } from "@/components/payment/TrustBadge";
@@ -18,7 +19,6 @@ const TrackingTimeline = dynamic(
   () => import("@/components/escrow/TrackingTimeline"),
   { loading: () => <TrackingTimelineSkeleton />, ssr: false }
 );
-import { toast } from "sonner";
 
 interface PaymentEscrowClientProps {
   escrow: Escrow;
@@ -73,11 +73,28 @@ export function PaymentEscrowClient({ escrow, escrowId }: PaymentEscrowClientPro
   const isFunded = escrow.status === EscrowStatusConst.FUNDED;
   // The countdown can expire the escrow client-side before the backend status
   // catches up, so either signal blocks funding.
-  const isExpired = escrow.status === EscrowStatusConst.EXPIRED || hasExpired;
+  const isExpired = escrow.status === EscrowStatusConst.EXPIRED ||
+    (escrow.status === EscrowStatusConst.PENDING && hasExpired);
+  const isPayable = escrow.status === EscrowStatusConst.PENDING && !isExpired;
+  const statusMessages: Partial<Record<Escrow["status"], string>> = {
+    SHIPPED: "payment.alreadyShipped",
+    COMPLETED: "payment.alreadyCompleted",
+    RELEASED: "payment.alreadyReleased",
+    REFUNDED: "payment.alreadyRefunded",
+    DISPUTED: "payment.alreadyDisputed",
+  };
+  const statusMessage = statusMessages[escrow.status];
 
   const handleExpire = useCallback(() => setHasExpired(true), []);
 
   const handlePayNow = async () => {
+    // Recheck the deadline at invocation: the countdown may not have ticked yet.
+    if (!isPayable) return;
+    if (escrow.expiresAt && Date.parse(escrow.expiresAt) <= Date.now()) {
+      handleExpire();
+      return;
+    }
+
     setError(null);
     setSuccess(null);
 
@@ -122,7 +139,7 @@ export function PaymentEscrowClient({ escrow, escrowId }: PaymentEscrowClientPro
         <p className="mt-1 text-sm text-zinc-500">{t("payment.escrowIdPrefix", { id: escrowId })}</p>
       </header>
 
-      {escrow.expiresAt && !isFunded && (
+      {escrow.expiresAt && (escrow.status === EscrowStatusConst.PENDING || escrow.status === EscrowStatusConst.EXPIRED) && (
         <EscrowCountdown
           expiresAt={escrow.expiresAt}
           onExpire={handleExpire}
@@ -171,7 +188,7 @@ export function PaymentEscrowClient({ escrow, escrowId }: PaymentEscrowClientPro
 
       <TrustBadge contractAddress={contractAddress} />
 
-      {!isFunded ? (
+      {isPayable ? (
         <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
           <h2 className="mb-1 text-lg font-medium text-zinc-900 dark:text-zinc-100">
             {t("payment.contactPromptTitle")}
@@ -259,6 +276,11 @@ export function PaymentEscrowClient({ escrow, escrowId }: PaymentEscrowClientPro
           </div>
         </>
       ) : null}
+      {statusMessage ? (
+        <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+          {t(statusMessage)}
+        </div>
+      ) : null}
       {isExpired ? (
         <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
           {t("payment.expiredMessage")}
@@ -278,7 +300,7 @@ export function PaymentEscrowClient({ escrow, escrowId }: PaymentEscrowClientPro
       <button
         type="button"
         onClick={handlePayNow}
-        disabled={isPaying || isLoading || isFunded || isExpired}
+        disabled={isPaying || isLoading || !isPayable}
         className="inline-flex w-full items-center justify-center rounded-lg bg-zinc-900 px-4 py-3 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
       >
         {isPaying || isLoading ? t("payment.waitingForFreighter") : t("payment.payNow")}

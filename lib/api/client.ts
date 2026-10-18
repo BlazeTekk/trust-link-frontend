@@ -606,7 +606,7 @@ export async function patchVendorNotifications(
  */
 export async function patchBuyerContact(
   escrowId: string,
-  data: { email?: string; phone?: string },
+  data: { email?: string; phone?: string; emailReceipt?: boolean },
   token?: string,
 ): Promise<EmptyResponse> {
   await request<EmptyResponse>(
@@ -673,7 +673,7 @@ export interface ApiClient {
   ) => Promise<EmptyResponse>;
   patchBuyerContact: (
     escrowId: string,
-    data: { email?: string; phone?: string },
+    data: { email?: string; phone?: string; emailReceipt?: boolean },
   ) => Promise<EmptyResponse>;
   getVendorAnalytics: () => Promise<GetVendorAnalyticsResponse>;
 }
@@ -710,7 +710,7 @@ export function createApiClient(token?: string): ApiClient {
       prefs: VendorNotificationPreferences,
       authToken = token ?? "",
     ) => patchVendorNotifications(prefs, authToken),
-    patchBuyerContact: (escrowId: string, data: { email?: string; phone?: string }) =>
+    patchBuyerContact: (escrowId: string, data: { email?: string; phone?: string; emailReceipt?: boolean }) =>
       patchBuyerContact(escrowId, data, token),
     getVendorAnalytics: () => getVendorAnalytics(token),
   };
