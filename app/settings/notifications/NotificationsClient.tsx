@@ -1,7 +1,7 @@
 "use client";
 
 import { Eye } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import EmailPreview from "@/components/notifications/EmailPreview";
@@ -39,15 +39,35 @@ export default function NotificationSettingsPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [previewEvent, setPreviewEvent] = useState<EventKey | null>(null);
 
+  // Identifies the latest load; responses from older (superseded or
+  // cancelled) loads are ignored so they cannot overwrite current state.
+  const latestLoadRef = useRef(0);
+
+  const loadPreferences = useCallback(async (authToken: string) => {
+    const loadId = ++latestLoadRef.current;
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const next = await getVendorNotificationPreferences(authToken);
+      if (loadId === latestLoadRef.current) setPrefs(next);
+    } catch {
+      if (loadId === latestLoadRef.current) {
+        setLoadError("Failed to load notification preferences.");
+      }
+    } finally {
+      if (loadId === latestLoadRef.current) setIsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!token) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setIsLoading(true);
-    getVendorNotificationPreferences(token)
-      .then(setPrefs)
-      .catch(() => setLoadError("Failed to load notification preferences."))
-      .finally(() => setIsLoading(false));
-  }, [token]);
+    void loadPreferences(token);
+    return () => {
+      // Cancel this token's load when the token changes or on unmount.
+      latestLoadRef.current += 1;
+    };
+  }, [token, loadPreferences]);
 
   function toggle(event: EventKey, channel: "email" | "sms") {
     setPrefs((prev) => ({
@@ -120,9 +140,20 @@ export default function NotificationSettingsPage() {
             ))}
           </div>
         ) : loadError ? (
-          <p className="px-6 py-8 text-center text-sm text-red-600 dark:text-red-400">
-            {loadError}
-          </p>
+          <div className="flex flex-col items-center gap-3 px-6 py-8 text-center">
+            <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+              {loadError}
+            </p>
+            {token && (
+              <button
+                type="button"
+                onClick={() => void loadPreferences(token)}
+                className="rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                Retry
+              </button>
+            )}
+          </div>
         ) : (
           <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
             {EVENTS.map(({ key, label }) => (
