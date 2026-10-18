@@ -394,4 +394,91 @@ describe("VendorOnboardingWizard", () => {
       expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
     });
   });
+
+  it("does not complete when the wallet disconnects on the review step", async () => {
+    mockConnectedWallet();
+    const { rerender } = render(<VendorOnboardingWizard />);
+    await screen.findByRole("heading", { name: "Vendor Profile" });
+    fillValidProfile();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByRole("heading", { name: "Review Your Store" });
+
+    mockWallet();
+    rerender(<VendorOnboardingWizard />);
+    fireEvent.click(screen.getByRole("button", { name: "Complete Onboarding" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Connect Your Wallet" })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Onboarding Complete" })
+    ).not.toBeInTheDocument();
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull();
+  });
+
+  it("sends an invalid profile reached through the stepper back to the profile step", async () => {
+    mockConnectedWallet();
+    await renderAtProfileStep();
+
+    fireEvent.click(screen.getByRole("button", { name: /Review & Finish/ }));
+    await screen.findByRole("heading", { name: "Review Your Store" });
+    fireEvent.click(screen.getByRole("button", { name: "Complete Onboarding" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Vendor Profile" })
+    ).toBeInTheDocument();
+    expect(screen.getByText("Shop name is required.")).toBeInTheDocument();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("sends an invalid restored review draft back to the profile step", async () => {
+    mockConnectedWallet();
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        step: 1,
+        shopName: "Restored Shop",
+        description: "Too short",
+        website: "",
+        shippingLocations: "",
+        completed: false,
+      })
+    );
+    render(<VendorOnboardingWizard />);
+    await screen.findByDisplayValue("Restored Shop");
+    fireEvent.click(screen.getByRole("button", { name: /Review & Finish/ }));
+    await screen.findByRole("heading", { name: "Review Your Store" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Complete Onboarding" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Vendor Profile" })
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Description must be at least 20 characters.").length
+    ).toBeGreaterThan(0);
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("completes a valid connected review only once", async () => {
+    mockConnectedWallet();
+    await renderAtProfileStep();
+    fillValidProfile();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByRole("heading", { name: "Review Your Store" });
+
+    const finish = screen.getByRole("button", { name: "Complete Onboarding" });
+    fireEvent.click(finish);
+    fireEvent.click(finish);
+
+    expect(
+      await screen.findByRole("heading", { name: "Onboarding Complete" })
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    });
+    expect(mockPush).toHaveBeenCalledTimes(1);
+    expect(mockPush).toHaveBeenCalledWith("/dashboard");
+  });
 });

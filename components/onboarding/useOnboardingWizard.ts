@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { startTransition, useEffect, useMemo, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 
 import useWallet from "@/hooks/useWallet";
 
@@ -104,6 +104,9 @@ export function useOnboardingWizard() {
   const [state, setState] = useState<VendorOnboardingState>(defaultState);
   const [hydrated, setHydrated] = useState(false);
   const [errors, setErrors] = useState<ValidationErrors>({});
+  // Set synchronously on completion so a repeated activation before the next
+  // render cannot complete onboarding twice.
+  const completedRef = useRef(false);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -203,8 +206,33 @@ export function useOnboardingWizard() {
     setState((current) => ({ ...current, step: Math.max(0, current.step - 1) as OnboardingStep }));
   };
 
+  /**
+   * Completes onboarding only if its prerequisites still hold. The review step
+   * is reachable through the stepper and restored drafts, so the wallet and
+   * profile are rechecked here and the user is sent to the step that needs
+   * attention instead.
+   */
   const handleFinish = () => {
+    if (completedRef.current || state.completed) {
+      return;
+    }
+
+    if (!wallet.isConnected) {
+      goToStep(0);
+      return;
+    }
+
+    if (!validateStep1()) {
+      goToStep(1);
+      return;
+    }
+
+    completedRef.current = true;
     setState((current) => ({ ...current, completed: true }));
+    router.push("/dashboard");
+  };
+
+  const goToDashboard = () => {
     router.push("/dashboard");
   };
 
@@ -219,5 +247,6 @@ export function useOnboardingWizard() {
     handleBack,
     handleNext,
     handleFinish,
+    goToDashboard,
   };
 }
