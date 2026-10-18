@@ -1,3 +1,4 @@
+import { StrKey } from "@stellar/stellar-sdk";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -194,5 +195,42 @@ describe("PaymentEscrowClient payment eligibility", () => {
     );
     expect(screen.getByRole("button", { name: "Pay Now" })).toBeDisabled();
     expect(screen.getByText(i18n.t("payment.expiredMessage"))).toBeInTheDocument();
+  });
+});
+
+
+describe("PaymentEscrowClient contract address", () => {
+  const escrowAddress = StrKey.encodeContract(Buffer.alloc(32, 1));
+  const fallbackAddress = StrKey.encodeContract(Buffer.alloc(32, 2));
+
+  beforeEach(async () => { await i18n.changeLanguage("en"); });
+  afterEach(() => { cleanup(); vi.unstubAllEnvs(); });
+
+  it.each([
+    { address: escrowAddress, fallback: fallbackAddress, expected: escrowAddress },
+    { address: undefined, fallback: fallbackAddress, expected: fallbackAddress },
+    { address: "record-id", fallback: fallbackAddress, expected: fallbackAddress },
+    { address: ` ${escrowAddress} `, fallback: "", expected: escrowAddress },
+    { address: escrowAddress, fallback: undefined, expected: escrowAddress },
+    { address: undefined, fallback: undefined, expected: null },
+    { address: "record-id", fallback: "invalid", expected: null },
+    { address: " ", fallback: " ", expected: null },
+    { address: escrowAddress.slice(0, -1), fallback: "", expected: null },
+  ])("uses the first valid contract address: %j", ({ address, fallback, expected }) => {
+    vi.stubEnv("NEXT_PUBLIC_CONTRACT_ID", fallback);
+    render(<PaymentEscrowClient escrow={{ ...baseEscrow, contractAddress: address }} escrowId={baseEscrow.id} />);
+    if (expected) {
+      expect(screen.getByTitle(expected)).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "View on Stellar Expert" })).toHaveAttribute(
+        "href", `https://stellar.expert/explorer/testnet/contract/${expected}`
+      );
+      expect(screen.queryByText(i18n.t("payment.contractUnavailable"))).not.toBeInTheDocument();
+    } else {
+      expect(screen.getByText(i18n.t("payment.contractUnavailable"))).toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "View on Stellar Expert" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Copy address" })).not.toBeInTheDocument();
+      expect(screen.queryByText("Funds Protected by Smart Contract")).not.toBeInTheDocument();
+      expect(screen.queryByTitle(baseEscrow.id)).not.toBeInTheDocument();
+    }
   });
 });

@@ -11,6 +11,7 @@ import TrackingTimelineSkeleton from "@/components/tracking/TrackingTimelineSkel
 import useWallet from "@/hooks/useWallet";
 import { patchBuyerContact } from "@/lib/api";
 import { renderMarkdown } from "@/lib/markdown";
+import { isValidContractId } from "@/lib/stellar/contract";
 import { connectFreighter, isFreighterInstalled } from "@/lib/stellar/freighter";
 import { Escrow, EscrowStatusConst } from "@/types";
 import { formatUSDC } from "@/utils/currency";
@@ -68,7 +69,11 @@ export function PaymentEscrowClient({ escrow, escrowId }: PaymentEscrowClientPro
   const amount = escrow.amount;
   const fee = useMemo(() => Number(((amount * PLATFORM_FEE_PERCENT) / 100).toFixed(2)), [amount]);
   const total = useMemo(() => Number((amount + fee).toFixed(2)), [amount, fee]);
-  const contractAddress = escrow.contractAddress ?? process.env.NEXT_PUBLIC_CONTRACT_ID ?? escrow.id;
+  const escrowAddress = escrow.contractAddress?.trim() ?? "";
+  const configuredAddress = process.env.NEXT_PUBLIC_CONTRACT_ID?.trim() ?? "";
+  const contractAddress = isValidContractId(escrowAddress)
+    ? escrowAddress
+    : isValidContractId(configuredAddress) ? configuredAddress : null;
 
   const isFunded = escrow.status === EscrowStatusConst.FUNDED;
   // The countdown can expire the escrow client-side before the backend status
@@ -186,7 +191,13 @@ export function PaymentEscrowClient({ escrow, escrowId }: PaymentEscrowClientPro
         </dl>
       </div>
 
-      <TrustBadge contractAddress={contractAddress} />
+      {contractAddress ? (
+        <TrustBadge contractAddress={contractAddress} />
+      ) : (
+        <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+          {t("payment.contractUnavailable")}
+        </div>
+      )}
 
       {isPayable ? (
         <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">

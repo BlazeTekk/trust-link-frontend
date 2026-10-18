@@ -98,6 +98,7 @@
     "contactErrorPhone": "Saisissez un numéro de téléphone valide au format E.164 (ex. +12125551234).",
     "description": "Description",
     "sendEmailReceipt": "Envoyer le reçu à cet e-mail",
+    "contractUnavailable": "L’adresse du contrat de séquestre est indisponible. Contactez le vendeur pour vérifier le contrat avant de payer.",
     "alreadyFunded": "Ce séquestre est déjà financé.",
     "alreadyShipped": "Cette commande a déjà été expédiée. Aucun paiement supplémentaire n’est nécessaire.",
     "alreadyCompleted": "Ce séquestre est terminé. Aucun paiement supplémentaire n’est nécessaire.",
