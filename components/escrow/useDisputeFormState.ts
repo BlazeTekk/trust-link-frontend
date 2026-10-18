@@ -122,6 +122,10 @@ export function useDisputeFormState({
   const handleFileUpload = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const selectedFiles = Array.from(e.target.files || []);
+      // Clear the native selection once it has been copied so choosing the
+      // same file again (after removing or rejecting it) still fires a change
+      // event. Accepted files live in `formData.files`, not in the input.
+      e.target.value = "";
 
       const rejectedByType = selectedFiles.filter(
         (file) => !isAllowedDisputeMimeType(file.type)

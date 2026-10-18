@@ -152,7 +152,12 @@ export default function DisputeForm({ escrowId }: DisputeFormProps) {
             accept={ACCEPT_ATTR}
             multiple
             className="hidden"
-            onChange={(event: ChangeEvent<HTMLInputElement>) => handleFileSelection(event.target.files)}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => {
+              handleFileSelection(event.target.files);
+              // Reset the native selection so the same file can be picked again
+              // after it is removed or rejected; accepted files stay in state.
+              event.target.value = "";
+            }}
           />
           <label htmlFor="evidence" className="flex cursor-pointer flex-col items-center gap-2 text-sm text-zinc-600 dark:text-zinc-300">
             <Upload className="h-5 w-5 text-[var(--accent)]" />
