@@ -342,6 +342,87 @@ describe('DisputeForm Multi-Step Flow', () => {
     });
   });
 
+  describe('Retry After Failure', () => {
+    async function submitFilledWizard() {
+      fillField(/name/i, 'John Doe');
+      fillField(/email/i, 'john@example.com');
+      fillField(/order number/i, 'ORD-123');
+      fireEvent.click(screen.getByTestId('next-button'));
+
+      fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: 'product_not_received' } });
+      fillField(/description/i, 'This is a detailed description with enough characters.');
+      fireEvent.click(screen.getByTestId('next-button'));
+
+      const mockFile = new File(['test content'], 'evidence.pdf', { type: 'application/pdf' });
+      setFiles(screen.getByTestId('file-input') as HTMLInputElement, [mockFile]);
+      fireEvent.click(screen.getByTestId('next-button'));
+
+      fireEvent.click(screen.getByLabelText(/i confirm/i));
+      fireEvent.click(screen.getByTestId('submit-button'));
+
+      await screen.findByTestId('error-state');
+    }
+
+    test('retry returns to the populated review step without resending', async () => {
+      vi.mocked(fetch).mockRejectedValueOnce(new Error('Network error'));
+      render(<DisputeForm />);
+      await submitFilledWizard();
+
+      fireEvent.click(screen.getByTestId('try-again-button'));
+
+      expect(screen.getByTestId('step-4')).toBeInTheDocument();
+      expect(screen.getByLabelText(/i confirm/i)).toBeChecked();
+      expect(screen.getByText(/evidence\.pdf/)).toBeInTheDocument();
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    test('resubmitting after retry sends the same payload once', async () => {
+      vi.mocked(fetch)
+        .mockRejectedValueOnce(new Error('Network error'))
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ success: true }),
+        } as Response);
+      render(<DisputeForm />);
+      await submitFilledWizard();
+
+      fireEvent.click(screen.getByTestId('try-again-button'));
+      const submitButton = screen.getByTestId('submit-button');
+      fireEvent.click(submitButton);
+      fireEvent.click(submitButton);
+
+      await screen.findByTestId('success-state');
+      expect(fetch).toHaveBeenCalledTimes(2);
+
+      const strip = (body: string) => {
+        const parsed = JSON.parse(body);
+        delete parsed.submittedAt;
+        return parsed;
+      };
+      const [first, second] = vi.mocked(fetch).mock.calls.map(
+        (call) => strip(call[1]!.body as string)
+      );
+      expect(second).toEqual(first);
+      expect(second).toMatchObject({
+        name: 'John Doe',
+        description: 'This is a detailed description with enough characters.',
+        files: [{ name: 'evidence.pdf', type: 'application/pdf' }],
+      });
+    });
+
+    test('start over clears the draft', async () => {
+      vi.mocked(fetch).mockRejectedValueOnce(new Error('Network error'));
+      render(<DisputeForm />);
+      await submitFilledWizard();
+
+      fireEvent.click(screen.getByTestId('start-over-button'));
+
+      expect(screen.getByTestId('step-1')).toBeInTheDocument();
+      expect(screen.getByLabelText(/name/i)).toHaveValue('');
+      expect(screen.getByLabelText(/email/i)).toHaveValue('');
+    });
+  });
+
   describe('Edge Cases', () => {
     test('persists form data when navigating back and forth', async () => {
       render(<DisputeForm />);
