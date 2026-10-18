@@ -372,6 +372,27 @@ describe('PDF Export Utility', () => {
       expect(mockState.savedFilenames).toEqual(['trustlink-receipt-escrow-1.pdf']);
     });
 
+    it('prints the escrow item, fee and total in USDC', async () => {
+      resetMocks();
+      await generateReceiptPDF({ ...validReceipt, protocolFee: 1.5, total: 101.5 });
+      const text = callsOf('text').map((call) => call.args[0]);
+      expect(text).toContain('Item Amount');
+      expect(text).toContain('100.00 USDC');
+      expect(text).toContain('Protocol Fee');
+      expect(text).toContain('1.50 USDC');
+      expect(text).toContain('Total Paid');
+      expect(text).toContain('101.50 USDC');
+      expect(text.some((value) => typeof value === 'string' && value.includes('XLM'))).toBe(false);
+    });
+
+    it('uses USDC when deriving the total without a fee', async () => {
+      resetMocks();
+      await generateReceiptPDF({ ...validReceipt, protocolFee: undefined });
+      const text = callsOf('text').map((call) => call.args[0]);
+      expect(text.filter((value) => value === '100.00 USDC')).toHaveLength(2);
+      expect(text).not.toContain('Protocol Fee');
+    });
+
     it('rejects negative amounts', async () => {
       resetMocks();
       await expect(

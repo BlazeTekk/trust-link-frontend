@@ -1,5 +1,5 @@
 import { rpc } from "@stellar/stellar-sdk";
-import { afterEach,beforeEach,describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildContractDeployment,
@@ -545,7 +545,7 @@ describe("lib/stellar/contract.ts", () => {
         .fn()
         .mockResolvedValueOnce({ status: "NOT_FOUND" })
         .mockResolvedValueOnce({ status: "PENDING" })
-        .mockResolvedValueOnce({ status: "SUCCESS", resultXdr: "late-result" });
+        .mockResolvedValueOnce({ status: "SUCCESS", resultXdr: { toXDR: () => "late-result" } });
 
       mockServer({
         sendTransaction: vi
@@ -556,14 +556,14 @@ describe("lib/stellar/contract.ts", () => {
 
       const result = await fundEscrow(validContractId, [], validSourceAccount, "TESTNET");
 
-      expect(result).toEqual({ hash: "pending-hash", resultXdr: "late-result" });
+      expect(result).toEqual({ hash: "pending-hash", resultXdr: { toXDR: () => "late-result" } });
       expect(getTransaction).toHaveBeenCalledWith("pending-hash");
     });
 
     it("fails as soon as the polled transaction reports FAILED", async () => {
       const getTransaction = vi
         .fn()
-        .mockResolvedValue({ status: "FAILED", errorResultXdr: "TxFailed: nope" });
+        .mockResolvedValue({ status: "FAILED", resultXdr: { result: () => ({ switch: () => ({ name: "TxFailed" }) }) } });
 
       mockServer({
         sendTransaction: vi
@@ -754,7 +754,7 @@ describe("lib/stellar/contract.ts", () => {
             .mockResolvedValue({ accountId: validSourceAccount, sequenceNumber: "0" }),
           sendTransaction: vi
             .fn()
-            .mockResolvedValue({ status: "FAILED", errorResultXdr: "TxFailed: no" }),
+            .mockResolvedValue({ status: "ERROR", errorResult: { result: () => ({ switch: () => ({ name: "TxFailed" }) }) } }),
         } as unknown as rpc.Server;
       });
 

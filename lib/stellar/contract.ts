@@ -1,12 +1,11 @@
 "use client";
 
 import {
-  Asset,
   Account,
+  Asset,
   BASE_FEE,
   Contract,
   nativeToScVal,
-  Networks,
   Operation,
   rpc,
   StrKey,
@@ -127,7 +126,7 @@ export async function submitPayment(
 
   try {
     const account = await server.getAccount(sourceAccount);
-    const tx = new TransactionBuilder(account as any, {
+    const tx = new TransactionBuilder(account, {
       fee,
       networkPassphrase,
     })
@@ -136,7 +135,7 @@ export async function submitPayment(
           destination,
           asset: Asset.native(),
           amount: normalizedAmount,
-        }) as any
+        })
       )
       .setTimeout(30)
       .build();
@@ -146,15 +145,11 @@ export async function submitPayment(
       TransactionBuilder.fromXDR(signedXdr, networkPassphrase)
     );
 
-    const status = (response as any)?.status;
-    if (status === "ERROR" || status === "FAILED") {
-      throw toTxError(
-        (response as any)?.errorResultXdr || (response as any)?.error,
-        "Transaction failed"
-      );
+    if (response.status === "ERROR") {
+      throw toTxError(transactionResultCode(response.errorResult), "Transaction failed");
     }
 
-    const hash = (response as any)?.hash;
+    const hash = response.hash;
     if (!hash) {
       throw new Error("Transaction submission returned no hash");
     }
@@ -163,20 +158,7 @@ export async function submitPayment(
   } catch (error) {
     throw toTxError(error, "Transaction submission failed");
   }
-  if (!destination || !destination.trim()) {
-    throw new Error("Destination address is required");
-  }
 
-  // Feature flag check for mock payment in production
-  const useMockPayment = process.env.NEXT_PUBLIC_USE_MOCK_PAYMENT === "true";
-  
-  if (useMockPayment) {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    return "b2d8e9f...a1c3b5d7";
-  }
-
-  // Real implementation would go here
-  throw new Error("Payment submission not yet implemented");
 }
 
 export type ContractArg =
@@ -241,14 +223,6 @@ function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function getNetworkPassphrase(
-  network: "TESTNET" | "PUBLIC"
-): typeof Networks.PUBLIC | typeof Networks.TESTNET {
-  return network === "PUBLIC"
-    ? Networks.PUBLIC
-    : Networks.TESTNET;
-}
-
 /** Converts a {@link ContractArg} into the `xdr.ScVal` the Soroban SDK operations require. */
 function toScVal(arg: ContractArg): xdr.ScVal {
   return arg instanceof xdr.ScVal ? arg : nativeToScVal(arg);
@@ -261,38 +235,6 @@ function transactionResultCode(result?: xdr.TransactionResult): string | undefin
   } catch {
     return undefined;
   }
-}
-
-/**
- * Polls `getTransaction` until the transaction leaves the `NOT_FOUND` state
- * (i.e. the submitting ledger has closed) or the attempt budget is spent.
- */
-async function pollTransaction(
-  server: rpc.Server,
-  hash: string,
-  { attempts = 10, intervalMs = 1000 }: { attempts?: number; intervalMs?: number } = {}
-): Promise<rpc.Api.GetTransactionResponse> {
-  let response = await server.getTransaction(hash);
-  let remaining = attempts;
-
-  while (response.status === rpc.Api.GetTransactionStatus.NOT_FOUND && remaining > 0) {
-    // Exponential backoff with jitter
-    const backoff = intervalMs * Math.pow(1.5, attempts - remaining);
-    const jitter = Math.random() * 200;
-    await new Promise((resolve) => setTimeout(resolve, backoff + jitter));
-    
-    response = await server.getTransaction(hash);
-    remaining -= 1;
-  }
-
-  // Even if timed out, preserve the hash for potential retry
-  if (response.status === rpc.Api.GetTransactionStatus.NOT_FOUND) {
-    const error = new Error(`Transaction ${hash} not found after ${attempts} attempts`) as Error & { hash?: string };
-    error.hash = hash;
-    throw error;
-  }
-
-  return response;
 }
 
 function toTxError(error: unknown, fallback: string): Error {
@@ -327,7 +269,6 @@ async function invokeSorobanContract(
   } = options;
 
   if (!isValidContractId(contractId)) {
-  if (!contractId || !StrKey.isValidContract(contractId)) {
     throw new Error("Invalid contract ID");
   }
 
@@ -362,54 +303,30 @@ async function invokeSorobanContract(
     const response = await server.sendTransaction(
       TransactionBuilder.fromXDR(signedXdr, networkPassphrase)
     );
-    const status = (response as any)?.status;
-
-    if (status === "ERROR" || status === "FAILED") {
-      throw toTxError((response as any)?.errorResultXdr || (response as any)?.error, "Transaction failed");
-    }
-
-    if (status === "PENDING") {
-      const hash = (response as any).hash;
-      if (!hash) {
-        throw new Error("Pending transaction was submitted without a hash");
-      }
-
-      // Poll with backoff + jitter. A timeout still surfaces the hash so the
-      // transaction can be looked up instead of being lost.
-      const txResponse = await pollWithBackoff({
-        check: async () => {
-          const polled = (await server.getTransaction(hash)) as any;
-          if (polled?.status === "FAILED" || polled?.status === "ERROR") {
-            throw toTxError(polled.errorResultXdr || polled.resultXdr, "Transaction failed");
-          }
-          return polled?.status === "SUCCESS" ? polled : null;
-        },
-        timeoutMs: SOROBAN_POLL_TIMEOUT_MS,
-        onTimeout: (attempts) => new TransactionConfirmationTimeoutError(hash, attempts),
-      });
-
-      return {
-        hash,
-        resultXdr: txResponse?.resultXdr || "",
-      };
     if (response.status === "ERROR") {
       throw toTxError(transactionResultCode(response.errorResult), "Transaction failed");
     }
 
-    const txResponse = await pollTransaction(server, response.hash);
-
-    if (txResponse.status === rpc.Api.GetTransactionStatus.FAILED) {
-      throw toTxError(transactionResultCode(txResponse.resultXdr), "Transaction failed");
+    const hash = response.hash;
+    if (!hash) {
+      throw new Error("Pending transaction was submitted without a hash");
     }
 
-    if (txResponse.status === rpc.Api.GetTransactionStatus.NOT_FOUND) {
-      const error = new Error(`Transaction ${response.hash} timed out waiting for inclusion in ledger`) as Error & { hash?: string };
-      error.hash = response.hash;
-      throw error;
-    }
+    // Preserve the backoff timeout and parsed SDK result handling together.
+    const txResponse = await pollWithBackoff({
+      check: async () => {
+        const polled = await server.getTransaction(hash);
+        if (polled.status === rpc.Api.GetTransactionStatus.FAILED) {
+          throw toTxError(transactionResultCode(polled.resultXdr), "Transaction failed");
+        }
+        return polled.status === rpc.Api.GetTransactionStatus.SUCCESS ? polled : null;
+      },
+      timeoutMs: SOROBAN_POLL_TIMEOUT_MS,
+      onTimeout: (attempts) => new TransactionConfirmationTimeoutError(hash, attempts),
+    });
 
     return {
-      hash: response.hash,
+      hash,
       resultXdr: txResponse.resultXdr.toXDR("base64"),
     };
   } catch (error) {
@@ -491,7 +408,6 @@ export function buildContractInvocation(options: ContractCallOptions): string {
 
   // Validate inputs
   if (!isValidContractId(contractId)) {
-  if (!contractId || !StrKey.isValidContract(contractId)) {
     throw new Error("Invalid contract ID");
   }
 

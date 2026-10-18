@@ -1,32 +1,30 @@
-'use client';
+"use client";
 
-import React, { useEffect } from 'react';
+import { useEffect } from "react";
 
-import ErrorBoundary from '@/components/layout/ErrorBoundary';
+import FetchErrorState from "@/components/ui/FetchErrorState";
 
 interface RouteErrorProps {
   error: Error & { digest?: string };
   reset: () => void;
+  /** Next.js retries server requests as well as resetting the boundary. */
+  unstable_retry?: () => void;
 }
 
-export default function RouteGroupErrorBoundary({ error, reset }: RouteErrorProps) {
+export default function RouteGroupErrorBoundary({ error, reset, unstable_retry }: RouteErrorProps) {
   useEffect(() => {
-    // Log the error securely to the console for easier workspace debugging
-    console.error('Route Group Level Error Captured:', error);
+    console.error("Payment route error:", error);
   }, [error]);
 
   return (
-    <div className="flex min-h-[400px] w-full flex-col items-center justify-center p-6 text-center">
-      <ErrorBoundary>
-        <div className="mt-4">
-          <button
-            onClick={() => reset()}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            Try again
-          </button>
-        </div>
-      </ErrorBoundary>
-    </div>
+    <main className="min-h-screen min-h-dvh bg-zinc-50 p-6 dark:bg-black">
+      <div className="mx-auto max-w-4xl">
+        <FetchErrorState
+          title="Unable to load payment"
+          message="We couldn’t load the escrow details. Please try again. If the problem continues, contact support."
+          onRetry={unstable_retry ?? reset}
+        />
+      </div>
+    </main>
   );
 }
