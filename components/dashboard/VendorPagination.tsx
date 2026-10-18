@@ -37,7 +37,7 @@ export default function VendorPagination({
               onPrevious();
             }
           }}
-          disabled={currentPage === 1}
+          disabled={currentPage <= 1}
           className="rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-50 disabled:cursor-not-allowed dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
         >
           {t("dashboard.previous")}
@@ -50,7 +50,7 @@ export default function VendorPagination({
               onNext();
             }
           }}
-          disabled={currentPage === totalPages}
+          disabled={currentPage >= totalPages}
           className="rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-50 disabled:cursor-not-allowed dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
         >
           {t("dashboard.next")}
