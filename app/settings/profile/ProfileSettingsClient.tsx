@@ -15,6 +15,17 @@ type ProfileValues = {
 
 type ProfileErrors = Partial<Record<keyof ProfileValues, string>>;
 
+function describeStorageError(err: unknown): string {
+  const name = err instanceof Error || err instanceof DOMException ? err.name : "";
+  if (name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED") {
+    return "Couldn't save your profile: browser storage is full. Free up site data for this browser and try again.";
+  }
+  if (name === "SecurityError") {
+    return "Couldn't save your profile: this browser is blocking site storage. Allow storage for this site (or leave private browsing) and try again.";
+  }
+  return "Couldn't save your profile. Your changes are still here — please try again.";
+}
+
 const DEFAULT_VALUES: ProfileValues = {
   businessName: "",
   displayName: "",
@@ -28,6 +39,7 @@ export default function ProfileSettingsClient() {
   const [errors, setErrors] = useState<ProfileErrors>({});
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -61,9 +73,14 @@ export default function ProfileSettingsClient() {
       return;
     }
     setIsSaving(true);
+    setSaved(false);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(values));
+      setSaveError(null);
       setSaved(true);
+    } catch (err) {
+      // Keep the edited values in state so the user can retry without retyping.
+      setSaveError(describeStorageError(err));
     } finally {
       setIsSaving(false);
     }
@@ -180,11 +197,16 @@ export default function ProfileSettingsClient() {
               {isSaving ? "Saving…" : "Save Changes"}
             </button>
             {saved && (
-              <p className="text-sm text-green-600 dark:text-green-400">
+              <p role="status" className="text-sm text-green-600 dark:text-green-400">
                 Profile saved.
               </p>
             )}
           </div>
+          {saveError && (
+            <p role="alert" className="mt-3 text-sm text-red-600 dark:text-red-400">
+              {saveError}
+            </p>
+          )}
         </form>
       </div>
     </main>
