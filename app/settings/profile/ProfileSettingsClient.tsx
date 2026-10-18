@@ -33,6 +33,24 @@ const DEFAULT_VALUES: ProfileValues = {
   bio: "",
 };
 
+const PROFILE_FIELDS = Object.keys(DEFAULT_VALUES) as (keyof ProfileValues)[];
+
+/**
+ * Merges the supported string fields from untrusted stored data over the
+ * defaults. Non-object payloads, unknown keys and non-string values are ignored
+ * so every input stays controlled and validation never sees a non-string.
+ */
+function parseStoredProfile(raw: unknown): ProfileValues {
+  const restored = { ...DEFAULT_VALUES };
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return restored;
+  const record = raw as Record<string, unknown>;
+  for (const field of PROFILE_FIELDS) {
+    const value = record[field];
+    if (typeof value === "string") restored[field] = value;
+  }
+  return restored;
+}
+
 export default function ProfileSettingsClient() {
   const { publicKey } = useWallet();
   const [values, setValues] = useState<ProfileValues>(DEFAULT_VALUES);
@@ -44,7 +62,10 @@ export default function ProfileSettingsClient() {
   useEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) startTransition(() => setValues(JSON.parse(stored)));
+      if (stored) {
+        const restored = parseStoredProfile(JSON.parse(stored));
+        startTransition(() => setValues(restored));
+      }
     } catch {
       // ignore malformed storage
     }
