@@ -25,6 +25,20 @@ function setFiles(input: HTMLInputElement, files: File[]) {
   fireEvent.change(input);
 }
 
+// jsdom refuses non-empty values on file inputs, so emulate a browser that
+// remembers the picked file's path until the app clears it.
+function selectFiles(input: HTMLInputElement, files: File[]) {
+  let value = files.length ? `C:\\fakepath\\${files[0].name}` : '';
+  Object.defineProperty(input, 'value', {
+    get: () => value,
+    set: (next: string) => {
+      value = next;
+    },
+    configurable: true,
+  });
+  setFiles(input, files);
+}
+
 // Helper to navigate to step 3 (evidence upload)
 async function navigateToStep3() {
   fillField(/name/i, 'John Doe');
@@ -232,6 +246,56 @@ describe('DisputeForm Multi-Step Flow', () => {
     });
   });
 
+  describe('Reselecting Evidence Files', () => {
+    test('a removed file can be selected again immediately', async () => {
+      render(<DisputeForm />);
+      await navigateToStep3();
+      const file = new File(['pdf'], 'evidence.pdf', { type: 'application/pdf' });
+      const input = screen.getByTestId('file-input') as HTMLInputElement;
+
+      selectFiles(input, [file]);
+      expect(input.value).toBe('');
+      expect(screen.getByTestId('file-0')).toHaveTextContent('evidence.pdf');
+
+      fireEvent.click(screen.getByTestId('delete-file-0'));
+      expect(screen.queryByTestId('file-0')).not.toBeInTheDocument();
+
+      selectFiles(input, [file]);
+      expect(screen.getByTestId('file-0')).toHaveTextContent('evidence.pdf');
+    });
+
+    test('a rejected selection can be retried with the same file', async () => {
+      render(<DisputeForm />);
+      await navigateToStep3();
+      const bad = new File(['x'], 'notes.txt', { type: 'text/plain' });
+      const input = screen.getByTestId('file-input') as HTMLInputElement;
+
+      selectFiles(input, [bad]);
+      expect(input.value).toBe('');
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+
+      selectFiles(input, [bad]);
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+      expect(screen.queryByTestId('file-0')).not.toBeInTheDocument();
+    });
+
+    test('resetting the native input keeps accepted evidence', async () => {
+      render(<DisputeForm />);
+      await navigateToStep3();
+      const input = screen.getByTestId('file-input') as HTMLInputElement;
+
+      selectFiles(input, [new File(['a'], 'a.pdf', { type: 'application/pdf' })]);
+      selectFiles(input, [new File(['b'], 'b.pdf', { type: 'application/pdf' })]);
+
+      expect(input.value).toBe('');
+      expect(screen.getByTestId('file-0')).toHaveTextContent('a.pdf');
+      expect(screen.getByTestId('file-1')).toHaveTextContent('b.pdf');
+
+      fireEvent.click(screen.getByTestId('next-button'));
+      expect(screen.getByTestId('step-4')).toBeInTheDocument();
+    });
+  });
+
   describe('Submit Tests', () => {
     test('calls POST /dispute with correct payload (AC #4)', async () => {
       vi.mocked(fetch).mockResolvedValueOnce({
@@ -339,6 +403,87 @@ describe('DisputeForm Multi-Step Flow', () => {
         expect(screen.getByTestId('error-state')).toBeInTheDocument();
         expect(screen.getByText(/submission failed/i)).toBeInTheDocument();
       });
+    });
+  });
+
+  describe('Retry After Failure', () => {
+    async function submitFilledWizard() {
+      fillField(/name/i, 'John Doe');
+      fillField(/email/i, 'john@example.com');
+      fillField(/order number/i, 'ORD-123');
+      fireEvent.click(screen.getByTestId('next-button'));
+
+      fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: 'product_not_received' } });
+      fillField(/description/i, 'This is a detailed description with enough characters.');
+      fireEvent.click(screen.getByTestId('next-button'));
+
+      const mockFile = new File(['test content'], 'evidence.pdf', { type: 'application/pdf' });
+      setFiles(screen.getByTestId('file-input') as HTMLInputElement, [mockFile]);
+      fireEvent.click(screen.getByTestId('next-button'));
+
+      fireEvent.click(screen.getByLabelText(/i confirm/i));
+      fireEvent.click(screen.getByTestId('submit-button'));
+
+      await screen.findByTestId('error-state');
+    }
+
+    test('retry returns to the populated review step without resending', async () => {
+      vi.mocked(fetch).mockRejectedValueOnce(new Error('Network error'));
+      render(<DisputeForm />);
+      await submitFilledWizard();
+
+      fireEvent.click(screen.getByTestId('try-again-button'));
+
+      expect(screen.getByTestId('step-4')).toBeInTheDocument();
+      expect(screen.getByLabelText(/i confirm/i)).toBeChecked();
+      expect(screen.getByText(/evidence\.pdf/)).toBeInTheDocument();
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    test('resubmitting after retry sends the same payload once', async () => {
+      vi.mocked(fetch)
+        .mockRejectedValueOnce(new Error('Network error'))
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ success: true }),
+        } as Response);
+      render(<DisputeForm />);
+      await submitFilledWizard();
+
+      fireEvent.click(screen.getByTestId('try-again-button'));
+      const submitButton = screen.getByTestId('submit-button');
+      fireEvent.click(submitButton);
+      fireEvent.click(submitButton);
+
+      await screen.findByTestId('success-state');
+      expect(fetch).toHaveBeenCalledTimes(2);
+
+      const strip = (body: string) => {
+        const parsed = JSON.parse(body);
+        delete parsed.submittedAt;
+        return parsed;
+      };
+      const [first, second] = vi.mocked(fetch).mock.calls.map(
+        (call) => strip(call[1]!.body as string)
+      );
+      expect(second).toEqual(first);
+      expect(second).toMatchObject({
+        name: 'John Doe',
+        description: 'This is a detailed description with enough characters.',
+        files: [{ name: 'evidence.pdf', type: 'application/pdf' }],
+      });
+    });
+
+    test('start over clears the draft', async () => {
+      vi.mocked(fetch).mockRejectedValueOnce(new Error('Network error'));
+      render(<DisputeForm />);
+      await submitFilledWizard();
+
+      fireEvent.click(screen.getByTestId('start-over-button'));
+
+      expect(screen.getByTestId('step-1')).toBeInTheDocument();
+      expect(screen.getByLabelText(/name/i)).toHaveValue('');
+      expect(screen.getByLabelText(/email/i)).toHaveValue('');
     });
   });
 

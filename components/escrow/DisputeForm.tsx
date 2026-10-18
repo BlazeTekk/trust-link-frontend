@@ -94,6 +94,7 @@ const DisputeForm: React.FC<DisputeFormProps> = ({
     handleFileUpload,
     removeFile,
     handleSubmit,
+    retrySubmission,
     resetForm,
   } = useDisputeFormState({ onSubmit, apiEndpoint, onSuccess, onError });
 
@@ -120,11 +121,10 @@ const DisputeForm: React.FC<DisputeFormProps> = ({
     return (
       <DisputeFormError
         message={submitMessage}
-        // Retrying means starting over, not re-sending the same payload: reset
-        // returns the wizard to step 1 and clears the error status.
-        onRetry={() => {
-          resetForm();
-        }}
+        // Retry keeps the draft (text, files and consent) and returns to the
+        // review step; only "Start Over" discards it.
+        onRetry={retrySubmission}
+        onStartOver={resetForm}
       />
     );
   }
