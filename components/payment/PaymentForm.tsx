@@ -14,11 +14,13 @@ import { generateReceiptPDF } from "@/lib/pdf";
 import { buildContractInvocation, parseContractError } from "@/lib/stellar/contract";
 import { signTransaction } from "@/lib/stellar/freighter";
 import { EscrowStatusConst } from "@/types";
+import { formatUSDC } from "@/utils/currency";
 
 
 export interface PaymentFormProps {
   escrowId: string;
   itemName: string;
+  /** Escrow item amount in USDC; fees and total use the same asset. */
   amount: number;
   protocolFee: number;
   total: number;
@@ -292,19 +294,19 @@ export default function PaymentForm({
         <div className="flex justify-between border-b border-zinc-100 pb-4 dark:border-zinc-800">
           <span className="text-zinc-500 dark:text-zinc-400">{t("payment.item") || "Item Amount"}</span>
           <span className="font-medium text-zinc-900 dark:text-zinc-100">
-            XLM {amount}
+            {formatUSDC(amount)}
           </span>
         </div>
         <div className="flex justify-between border-b border-zinc-100 pb-4 dark:border-zinc-800">
           <span className="text-zinc-500 dark:text-zinc-400">{t("payment.platformFee", { percent: 1.5 }) || "Protocol Fee"}</span>
           <span className="font-medium text-zinc-900 dark:text-zinc-100">
-            XLM {protocolFee}
+            {formatUSDC(protocolFee)}
           </span>
         </div>
         <div className="flex justify-between pt-2">
           <span className="font-semibold text-zinc-900 dark:text-zinc-100">{t("payment.total") || "Total"}</span>
           <span className="font-bold text-zinc-900 dark:text-zinc-100">
-            XLM {total}
+            {formatUSDC(total)}
           </span>
         </div>
       </div>

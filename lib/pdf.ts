@@ -1,4 +1,5 @@
 import type { Escrow } from '@/types';
+import { formatUSDC } from '@/utils/currency';
 
 // `jspdf` and `html2canvas` are large (~100kb+ combined) and only needed when a
 // user actually triggers a PDF export, so they're dynamically imported inside
@@ -389,11 +390,11 @@ export interface ReceiptData {
   escrowId: string;
   /** Human-readable item name. */
   itemName: string;
-  /** Item amount, before fees. */
+  /** Escrow item amount in USDC, before fees. */
   amount: number;
-  /** Protocol fee charged on top of `amount`. */
+  /** Protocol fee in USDC charged on top of `amount`. */
   protocolFee?: number;
-  /** Amount actually paid; defaults to `amount + protocolFee`. */
+  /** USDC amount actually paid; defaults to `amount + protocolFee`. */
   total?: number;
   /** On-chain transaction hash for the funding payment. */
   txHash: string;
@@ -508,7 +509,7 @@ export async function generateReceiptPDF(
   pdf.setFont('helvetica', 'normal');
   amountRows.forEach(([label, value]) => {
     pdf.text(label, margin, yPosition);
-    pdf.text(`${value.toFixed(2)} XLM`, pageWidth - margin, yPosition, { align: 'right' });
+    pdf.text(formatUSDC(value), pageWidth - margin, yPosition, { align: 'right' });
     yPosition += 7;
   });
 
@@ -519,7 +520,7 @@ export async function generateReceiptPDF(
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(11);
   pdf.text('Total Paid', margin, yPosition);
-  pdf.text(`${total.toFixed(2)} XLM`, pageWidth - margin, yPosition, { align: 'right' });
+  pdf.text(formatUSDC(total), pageWidth - margin, yPosition, { align: 'right' });
 
   // Footer
   pdf.setFont('helvetica', 'normal');
