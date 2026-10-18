@@ -8,7 +8,9 @@ import { ITEMS_PER_PAGE } from "./vendorListShared";
 
 /**
  * Owns the search / status / date-range filter state, derives the filtered
- * list, and paginates it. Changing any filter resets back to page one.
+ * list, and paginates it. Changing any filter resets back to page one, and
+ * the exposed page is always clamped to the current filtered total so a
+ * shrinking list (cancellation, reload) never leaves an empty trailing page.
  */
 export function useEscrowFilters(escrows: Escrow[] | null) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -50,11 +52,16 @@ export function useEscrowFilters(escrows: Escrow[] | null) {
     ? Math.ceil(filteredEscrows.length / ITEMS_PER_PAGE)
     : 0;
 
+  // Derived rather than synced via an effect so the first render after the
+  // list shrinks is already in bounds. Never drops below page one.
+  const lastPage = Math.max(1, totalPages);
+  const effectivePage = Math.min(Math.max(1, currentPage), lastPage);
+
   const paginatedEscrows = useMemo(() => {
     if (!filteredEscrows) return [];
-    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    const startIndex = (effectivePage - 1) * ITEMS_PER_PAGE;
     return filteredEscrows.slice(startIndex, startIndex + ITEMS_PER_PAGE);
-  }, [filteredEscrows, currentPage]);
+  }, [filteredEscrows, effectivePage]);
 
   const clearDateFilter = () => {
     setFromDate("");
@@ -67,9 +74,10 @@ export function useEscrowFilters(escrows: Escrow[] | null) {
     clearDateFilter();
   };
 
-  const goToPreviousPage = () => setCurrentPage((p) => Math.max(1, p - 1));
+  // Step from the clamped page so a stale out-of-range value cannot leak back.
+  const goToPreviousPage = () => setCurrentPage(Math.max(1, effectivePage - 1));
   const goToNextPage = () =>
-    setCurrentPage((p) => Math.min(totalPages, p + 1));
+    setCurrentPage(Math.min(lastPage, effectivePage + 1));
 
   return {
     searchQuery,
@@ -80,7 +88,7 @@ export function useEscrowFilters(escrows: Escrow[] | null) {
     setFromDate,
     toDate,
     setToDate,
-    currentPage,
+    currentPage: effectivePage,
     filteredEscrows,
     paginatedEscrows,
     totalPages,
