@@ -32,8 +32,9 @@ const DEFAULT_PREFS: VendorNotificationPreferences = {
 };
 
 export default function NotificationSettingsPage() {
-  const { token } = useWallet();
+  const { token, connect } = useWallet();
   const [prefs, setPrefs] = useState<VendorNotificationPreferences>(DEFAULT_PREFS);
+  const [loadedToken, setLoadedToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -47,9 +48,13 @@ export default function NotificationSettingsPage() {
     const loadId = ++latestLoadRef.current;
     setIsLoading(true);
     setLoadError(null);
+    setLoadedToken(null);
     try {
       const next = await getVendorNotificationPreferences(authToken);
-      if (loadId === latestLoadRef.current) setPrefs(next);
+      if (loadId === latestLoadRef.current) {
+        setPrefs(next);
+        setLoadedToken(authToken);
+      }
     } catch {
       if (loadId === latestLoadRef.current) {
         setLoadError("Failed to load notification preferences.");
@@ -60,7 +65,10 @@ export default function NotificationSettingsPage() {
   }, []);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      latestLoadRef.current += 1;
+      return;
+    }
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadPreferences(token);
     return () => {
@@ -77,7 +85,7 @@ export default function NotificationSettingsPage() {
   }
 
   async function handleSave() {
-    if (!token) {
+    if (!token || loadedToken !== token) {
       toast.error("Connect your wallet to save preferences.");
       return;
     }
@@ -119,7 +127,20 @@ export default function NotificationSettingsPage() {
         </div>
 
         {/* Event rows */}
-        {isLoading ? (
+        {!token ? (
+          <div className="flex flex-col items-center gap-4 px-6 py-10 text-center" role="status">
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              Connect your wallet to manage notification preferences.
+            </p>
+            <button
+              type="button"
+              onClick={() => void connect()}
+              className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+            >
+              Connect wallet
+            </button>
+          </div>
+        ) : isLoading || (!loadError && loadedToken !== token) ? (
           <div className="space-y-px">
             {EVENTS.map(({ key }) => (
               <div
@@ -205,7 +226,7 @@ export default function NotificationSettingsPage() {
         <div className="border-t border-zinc-100 px-6 py-4 dark:border-zinc-800">
           <button
             onClick={handleSave}
-            disabled={isSaving || isLoading || !!loadError}
+            disabled={!token || loadedToken !== token || isSaving || isLoading || !!loadError}
             className="rounded-2xl bg-zinc-900 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
           >
             {isSaving ? "Saving…" : "Save preferences"}
@@ -213,7 +234,7 @@ export default function NotificationSettingsPage() {
         </div>
       </div>
 
-      {previewEvent && (
+      {token && previewEvent && (
         <EmailPreview
           eventKey={previewEvent}
           open={!!previewEvent}
