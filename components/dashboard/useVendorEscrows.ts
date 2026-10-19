@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useCallback, useEffect, useState } from "react";
+import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 
 import { getVendorEscrows } from "@/lib/api";
 import type { Escrow } from "@/types";
@@ -17,20 +17,27 @@ interface UseVendorEscrowsOptions {
 export function useVendorEscrows({ errorMessage }: UseVendorEscrowsOptions) {
   const [escrows, setEscrows] = useState<Escrow[] | null>(null);
   const [error, setError] = useState<Error | null>(null);
+  const latestRequestRef = useRef(0);
 
   const loadItems = useCallback(async () => {
+    const requestId = ++latestRequestRef.current;
     try {
       setError(null);
       const token = window.localStorage.getItem("wallet.jwt") || undefined;
       const data = await getVendorEscrows(token);
-      setEscrows(data);
+      if (requestId === latestRequestRef.current) setEscrows(data);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error(errorMessage));
+      if (requestId === latestRequestRef.current) {
+        setError(err instanceof Error ? err : new Error(errorMessage));
+      }
     }
   }, [errorMessage]);
 
   useEffect(() => {
     startTransition(() => loadItems());
+    return () => {
+      latestRequestRef.current += 1;
+    };
   }, [loadItems]);
 
   const retry = useCallback(() => {

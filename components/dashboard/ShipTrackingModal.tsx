@@ -4,6 +4,7 @@ import React, { FormEvent, useRef,useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useFocusTrap } from "@/hooks/useFocusTrap";
+import useWallet from "@/hooks/useWallet";
 import { shipEscrow } from "@/lib/api";
 
 /**
@@ -36,6 +37,7 @@ export default function ShipTrackingModal({
   onSuccess,
 }: ShipTrackingModalProps) {
   const { t } = useTranslation();
+  const { token } = useWallet();
   const [trackingId, setTrackingId] = useState("");
   const [carrier, setCarrier] = useState("Terminal Africa");
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +64,11 @@ export default function ShipTrackingModal({
       return;
     }
 
+    if (!token) {
+      setError(t("dashboard.reconnectPrompt"));
+      return;
+    }
+
     setIsSubmitting(true);
     setError(null);
 
@@ -69,7 +76,7 @@ export default function ShipTrackingModal({
       await shipEscrow(escrowId, {
         trackingId: trimmedTrackingId,
         carrier: carrier,
-      });
+      }, token);
 
       onSuccess(escrowId);
       onClose();

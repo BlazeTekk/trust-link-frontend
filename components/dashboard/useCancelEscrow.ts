@@ -11,7 +11,6 @@ import type { TranslateFn } from "./vendorListShared";
 interface UseCancelEscrowOptions {
   translate: TranslateFn;
   setEscrows: React.Dispatch<React.SetStateAction<Escrow[] | null>>;
-  setError: React.Dispatch<React.SetStateAction<Error | null>>;
 }
 
 /**
@@ -22,7 +21,6 @@ interface UseCancelEscrowOptions {
 export function useCancelEscrow({
   translate,
   setEscrows,
-  setError,
 }: UseCancelEscrowOptions) {
   const [escrowToCancel, setEscrowToCancel] = useState<Escrow | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -54,11 +52,10 @@ export function useCancelEscrow({
           ? err.message
           : translate("dashboard.cancelEscrowError");
       toast.error(message);
-      setError(new Error(message));
     } finally {
       setIsCancelling(false);
     }
-  }, [escrowToCancel, setEscrows, setError, translate]);
+  }, [escrowToCancel, setEscrows, translate]);
 
   return {
     escrowToCancel,
