@@ -78,6 +78,17 @@ describe("TrackingTimeline", () => {
     expect(screen.getByText("tracking.delivered")).toBeInTheDocument();
   });
 
+  it("shows a readable fallback for an invalid update timestamp", async () => {
+    const invalidDateEscrow = { ...mockEscrow, updatedAt: "not-a-date" };
+    await act(async () => {
+      render(
+        <TrackingTimeline escrowId="esc_123" initialEscrow={invalidDateEscrow} />
+      );
+    });
+
+    expect(screen.getByText("Date unavailable")).toBeInTheDocument();
+  });
+
   it("highlights current stage for PENDING status", async () => {
     await act(async () => {
       render(

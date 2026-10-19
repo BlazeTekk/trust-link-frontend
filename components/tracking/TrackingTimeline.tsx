@@ -9,6 +9,7 @@ import TrackingTimelineSkeleton from "@/components/tracking/TrackingTimelineSkel
 import FetchErrorState, { getFetchErrorMessage } from "@/components/ui/FetchErrorState";
 import { useEscrow } from "@/hooks/useEscrow";
 import { track } from "@/lib/analytics";
+import { UNAVAILABLE_DATE } from "@/lib/utils";
 import { Escrow, EscrowStatus, EscrowStatusConst } from "@/types";
 
 interface TrackingStage {
@@ -216,14 +217,20 @@ export default function TrackingTimeline({
                   >
                     {t(stage.descriptionKey)}
                   </p>
-                  {isCurrent && activeEscrow.updatedAt && (
-                    <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
-                      {new Intl.DateTimeFormat(i18n.language, {
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                      }).format(new Date(activeEscrow.updatedAt))}
-                    </p>
-                  )}
+                  {isCurrent && activeEscrow.updatedAt && (() => {
+                    const updatedAt = new Date(activeEscrow.updatedAt);
+                    const timestamp = Number.isNaN(updatedAt.getTime())
+                      ? UNAVAILABLE_DATE
+                      : new Intl.DateTimeFormat(i18n.language, {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        }).format(updatedAt);
+                    return (
+                      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
+                        {timestamp}
+                      </p>
+                    );
+                  })()}
                 </div>
 
                     {/* Status indicator */}

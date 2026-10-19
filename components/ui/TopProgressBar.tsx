@@ -1,26 +1,42 @@
 "use client";
 
 import { usePathname, useSearchParams } from "next/navigation";
-import { startTransition,useEffect, useRef, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
+
+const NAVIGATION_ABANDON_TIMEOUT_MS = 30_000;
 
 export default function TopProgressBar() {
   const [isNavigating, setIsNavigating] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [navigationStartUrl, setNavigationStartUrl] = useState<string | null>(null);
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const currentUrl = `${pathname}?${searchParams.toString()}`;
+  const currentUrlRef = useRef(currentUrl);
+  const progressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const completionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abandonmentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // When pathname or search params change, complete the progress bar
   useEffect(() => {
-    if (isNavigating) {
+    currentUrlRef.current = currentUrl;
+  }, [currentUrl]);
+
+  // Complete only after the router has committed a different path or query.
+  useEffect(() => {
+    if (navigationStartUrl !== null && currentUrl !== navigationStartUrl) {
+      if (abandonmentTimerRef.current) {
+        clearTimeout(abandonmentTimerRef.current);
+        abandonmentTimerRef.current = null;
+      }
       startTransition(() => setProgress(100));
-      const timer = setTimeout(() => {
+      completionTimerRef.current = setTimeout(() => {
         setIsNavigating(false);
         setProgress(0);
+        setNavigationStartUrl(null);
+        completionTimerRef.current = null;
       }, 300); // Wait for the transition to finish before hiding
-      return () => clearTimeout(timer);
     }
-  }, [pathname, searchParams, isNavigating]);
+  }, [currentUrl, navigationStartUrl]);
 
   useEffect(() => {
     const handleAnchorClick = (e: MouseEvent, target: HTMLAnchorElement) => {
@@ -50,8 +66,17 @@ export default function TopProgressBar() {
         targetUrl.pathname !== window.location.pathname ||
         targetUrl.search !== window.location.search
       ) {
+        if (completionTimerRef.current) clearTimeout(completionTimerRef.current);
+        if (abandonmentTimerRef.current) clearTimeout(abandonmentTimerRef.current);
+        setNavigationStartUrl(currentUrlRef.current);
         setIsNavigating(true);
         setProgress(15);
+        abandonmentTimerRef.current = setTimeout(() => {
+          setIsNavigating(false);
+          setProgress(0);
+          setNavigationStartUrl(null);
+          abandonmentTimerRef.current = null;
+        }, NAVIGATION_ABANDON_TIMEOUT_MS);
       }
     };
 
@@ -68,14 +93,20 @@ export default function TopProgressBar() {
 
     return () => {
       document.removeEventListener("click", handleDocumentClick);
-      if (timerRef.current) clearTimeout(timerRef.current);
     };
+  }, []);
+
+  useEffect(() => () => {
+    if (progressTimerRef.current) clearTimeout(progressTimerRef.current);
+    if (completionTimerRef.current) clearTimeout(completionTimerRef.current);
+    if (abandonmentTimerRef.current) clearTimeout(abandonmentTimerRef.current);
   }, []);
 
   // Simulate progress increasing over time
   useEffect(() => {
     if (isNavigating && progress < 90) {
-      timerRef.current = setTimeout(() => {
+      progressTimerRef.current = setTimeout(() => {
+        progressTimerRef.current = null;
         setProgress((prev) => {
           // Slow down the progress as it gets higher
           const inc = prev < 50 ? 10 : prev < 80 ? 5 : 2;
@@ -84,7 +115,10 @@ export default function TopProgressBar() {
       }, 300);
     }
     return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
+      if (progressTimerRef.current) {
+        clearTimeout(progressTimerRef.current);
+        progressTimerRef.current = null;
+      }
     };
   }, [isNavigating, progress]);
 

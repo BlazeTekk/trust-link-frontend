@@ -8,6 +8,8 @@ export function cn(...classes: Array<string | undefined | null | false>) {
   return classes.filter(Boolean).join(" ");
 }
 
+export const UNAVAILABLE_DATE = "Date unavailable";
+
 /**
  * Formats a date into a localized relative time string using Intl.RelativeTimeFormat.
  *
@@ -17,6 +19,8 @@ export function cn(...classes: Array<string | undefined | null | false>) {
  */
 export function formatTimeAgo(date: string | number | Date, locale = "en"): string {
   const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return UNAVAILABLE_DATE;
+
   const now = new Date();
   const diffInSeconds = Math.floor((d.getTime() - now.getTime()) / 1000);
 

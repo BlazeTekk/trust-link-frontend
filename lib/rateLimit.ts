@@ -82,26 +82,30 @@ export function __resetRateLimitMemory(): void {
 
 // ── Upstash-backed limiter (lazy, only when configured) ───────────────────────
 
-let upstashLimiter: Ratelimit | null = null;
+const upstashLimiters = new Map<string, Ratelimit>();
 
-function getUpstashLimiter(): Ratelimit | null {
-  if (upstashLimiter) return upstashLimiter;
+function getUpstashLimiter(limit: number, windowMs: number): Ratelimit | null {
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!url || !token) return null;
 
-  upstashLimiter = new Ratelimit({
+  const policyKey = `${limit}:${windowMs}`;
+  const existing = upstashLimiters.get(policyKey);
+  if (existing) return existing;
+
+  const limiter = new Ratelimit({
     redis: new Redis({ url, token }),
-    limiter: Ratelimit.slidingWindow(DEFAULT_LIMIT, `${DEFAULT_WINDOW_MS} ms`),
+    limiter: Ratelimit.slidingWindow(limit, `${windowMs} ms`),
     prefix: "trustlink-ratelimit",
     analytics: false,
   });
-  return upstashLimiter;
+  upstashLimiters.set(policyKey, limiter);
+  return limiter;
 }
 
 /** Test-only: drops the memoised Upstash limiter. */
 export function __resetUpstashLimiter(): void {
-  upstashLimiter = null;
+  upstashLimiters.clear();
 }
 
 /**
@@ -113,13 +117,14 @@ export async function checkRateLimit(
   limit: number = DEFAULT_LIMIT,
   windowMs: number = DEFAULT_WINDOW_MS
 ): Promise<RateLimitResult> {
+  const policyKey = `${limit}:${windowMs}:${identifier}`;
   try {
-    const limiter = getUpstashLimiter();
+    const limiter = getUpstashLimiter(limit, windowMs);
     if (limiter) {
-      const res = await limiter.limit(identifier);
+      const res = await limiter.limit(policyKey);
       return {
         success: res.success,
-        limit: res.limit,
+        limit,
         remaining: res.remaining,
         reset: res.reset,
       };
@@ -149,7 +154,7 @@ export async function checkRateLimit(
     console.warn("Rate limiter Redis failure, falling back to in-memory");
   }
 
-  return memoryLimit(identifier, limit, windowMs);
+  return memoryLimit(policyKey, limit, windowMs);
 }
 
 // ── Client identification ─────────────────────────────────────────────────────
@@ -224,9 +229,14 @@ function randomId(): string {
  * `anonymous` one, so a single headerless client cannot exhaust a quota that
  * every other anonymous caller also draws from.
  */
-export function getRateLimitKey(request: Request | null | undefined): string {
+export function getRateLimitKey(
+  request: Request | null | undefined,
+  operation = "default"
+): string {
   const id = getClientId(request);
-  return id === "anonymous" ? `anonymous:${randomId()}` : `ip:${id}`;
+  return id === "anonymous"
+    ? `${operation}:anonymous:${randomId()}`
+    : `${operation}:ip:${id}`;
 }
 
 /**
@@ -237,9 +247,10 @@ export function getRateLimitKey(request: Request | null | undefined): string {
 export async function enforceRateLimit(
   request: Request,
   limit: number = DEFAULT_LIMIT,
-  windowMs: number = DEFAULT_WINDOW_MS
+  windowMs: number = DEFAULT_WINDOW_MS,
+  operation = "default"
 ): Promise<Response | null> {
-  const id = getRateLimitKey(request);
+  const id = getRateLimitKey(request, operation);
   const result = await checkRateLimit(id, limit, windowMs);
 
   if (!result.success) {
