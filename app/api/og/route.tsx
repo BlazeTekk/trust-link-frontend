@@ -12,7 +12,8 @@ export async function GET(request: NextRequest) {
   const limited = await enforceRateLimit(
     request,
     RATE_LIMITS.og.limit,
-    RATE_LIMITS.og.windowMs
+    RATE_LIMITS.og.windowMs,
+    "og:image"
   );
   if (limited) return limited;
 

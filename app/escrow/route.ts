@@ -9,7 +9,8 @@ export async function GET(request: Request) {
   const limited = await enforceRateLimit(
     request,
     RATE_LIMITS.escrowRead.limit,
-    RATE_LIMITS.escrowRead.windowMs
+    RATE_LIMITS.escrowRead.windowMs,
+    "escrow:read"
   );
   if (limited) return limited;
 
@@ -24,7 +25,8 @@ export async function POST(request: NextRequest) {
   const limited = await enforceRateLimit(
     request,
     RATE_LIMITS.escrowWrite.limit,
-    RATE_LIMITS.escrowWrite.windowMs
+    RATE_LIMITS.escrowWrite.windowMs,
+    "escrow:create"
   );
   if (limited) return limited;
 

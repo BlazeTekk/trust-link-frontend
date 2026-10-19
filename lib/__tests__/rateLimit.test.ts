@@ -105,15 +105,16 @@ describe("getRateLimitKey", () => {
     const r = new Request("https://x.test", {
       headers: { "x-forwarded-for": "1.2.3.4" },
     });
-    expect(getRateLimitKey(r)).toBe("ip:1.2.3.4");
+    expect(getRateLimitKey(r)).toBe("default:ip:1.2.3.4");
     expect(getRateLimitKey(r)).toBe(getRateLimitKey(r));
+    expect(getRateLimitKey(r, "escrow:create")).toBe("escrow:create:ip:1.2.3.4");
   });
 
   it("isolates unidentifiable callers instead of sharing one anonymous bucket", () => {
     const a = getRateLimitKey(new Request("https://x.test"));
     const b = getRateLimitKey(new Request("https://x.test"));
-    expect(a.startsWith("anonymous:")).toBe(true);
-    expect(b.startsWith("anonymous:")).toBe(true);
+    expect(a.startsWith("default:anonymous:")).toBe(true);
+    expect(b.startsWith("default:anonymous:")).toBe(true);
     expect(a).not.toBe(b);
   });
 });
@@ -147,6 +148,25 @@ describe("checkRateLimit (in-memory fallback)", () => {
 
     const other = await checkRateLimit("ip-y", 1, 10_000);
     expect(other.success).toBe(true);
+  });
+
+  it("separates operation buckets while sharing requests within an operation", async () => {
+    const request = req("10.10.10.10");
+    expect(await enforceRateLimit(request, 1, 10_000, "og:image")).toBeNull();
+    expect(await enforceRateLimit(request, 1, 10_000, "escrow:create")).toBeNull();
+    expect(await enforceRateLimit(request, 1, 10_000, "og:image")).not.toBeNull();
+  });
+
+  it("separates memory buckets by requested policy", async () => {
+    expect(await checkRateLimit("same-operation", 1, 10_000)).toMatchObject({
+      success: true,
+      limit: 1,
+    });
+    expect(await checkRateLimit("same-operation", 2, 10_000)).toMatchObject({
+      success: true,
+      limit: 2,
+      remaining: 1,
+    });
   });
 
   it("resets after the window elapses", async () => {

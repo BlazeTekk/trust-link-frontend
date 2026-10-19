@@ -28,7 +28,8 @@ export async function PATCH(
   const limited = await enforceRateLimit(
     request,
     RATE_LIMITS.escrowWrite.limit,
-    RATE_LIMITS.escrowWrite.windowMs
+    RATE_LIMITS.escrowWrite.windowMs,
+    "escrow:ship"
   );
   if (limited) return limited;
 
