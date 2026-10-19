@@ -1,10 +1,7 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
 import { Breadcrumb } from "@/components/ui/Breadcrumb";
-import { getDispute } from "@/lib/api";
-import type { GetDisputeResponse } from "@/types/api";
 
 import { DisputeDetailsClient } from "./DisputeDetailsClient";
 
@@ -16,36 +13,14 @@ interface PageProps {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
-  try {
-    const dispute = await getDispute(id);
-    return {
-      title: `Dispute #${id.slice(0, 8)} | TrustLink Admin`,
-      description: dispute.reason
-        ? `Review dispute: ${dispute.reason.slice(0, 120)}`
-        : `Manage and resolve escrow dispute #${id.slice(0, 8)}.`,
-    };
-  } catch {
-    return {
-      title: "Dispute Details | TrustLink Admin",
-      description: "Review and resolve escrow disputes on TrustLink.",
-    };
-  }
+  return {
+    title: `Dispute #${id.slice(0, 8)} | TrustLink Admin`,
+    description: "Review and resolve escrow disputes on TrustLink.",
+  };
 }
 
 export default async function DisputeDetailsPage({ params }: PageProps) {
   const { id } = await params;
-
-  let dispute: GetDisputeResponse;
-  try {
-    dispute = await getDispute(id);
-  } catch (error) {
-    console.error("Error loading dispute:", error);
-    notFound();
-  }
-
-  if (!dispute) {
-    notFound();
-  }
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black">
@@ -63,7 +38,7 @@ export default async function DisputeDetailsPage({ params }: PageProps) {
         </div>
 
         <Suspense fallback={null}>
-          <DisputeDetailsClient dispute={dispute} />
+          <DisputeDetailsClient disputeId={id} />
         </Suspense>
       </div>
     </div>

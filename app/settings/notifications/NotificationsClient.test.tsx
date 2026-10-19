@@ -6,10 +6,13 @@ import { getVendorNotificationPreferences } from "@/lib/api";
 
 import NotificationSettingsPage from "./NotificationsClient";
 
-const wallet = vi.hoisted(() => ({ token: "token-a" as string | null }));
+const wallet = vi.hoisted(() => ({
+  token: "token-a" as string | null,
+  connect: vi.fn(),
+}));
 
 vi.mock("@/hooks/useWallet", () => ({
-  default: () => ({ token: wallet.token }),
+  default: () => wallet,
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -134,5 +137,40 @@ describe("NotificationSettingsPage preference loading", () => {
     await act(async () => forB.resolve(prefs(true)));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(fundedEmail()).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("shows connection guidance and clears prior preferences after disconnect", async () => {
+    getPrefs.mockResolvedValue(prefs(true));
+    const { rerender } = render(<NotificationSettingsPage />);
+    expect(await screen.findByRole("switch", { name: "Funded email" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+
+    wallet.token = null;
+    rerender(<NotificationSettingsPage />);
+
+    expect(await screen.findByText("Connect your wallet to manage notification preferences.")).toBeInTheDocument();
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+    expect(saveButton()).toBeDisabled();
+  });
+
+  it("loads preferences after connecting and enables saving only after retrieval", async () => {
+    wallet.token = null;
+    const pending = deferred<VendorNotificationPreferences>();
+    getPrefs.mockReturnValue(pending.promise);
+    const { rerender } = render(<NotificationSettingsPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Connect wallet" }));
+    expect(wallet.connect).toHaveBeenCalledTimes(1);
+
+    wallet.token = "token-b";
+    rerender(<NotificationSettingsPage />);
+    expect(getPrefs).toHaveBeenCalledWith("token-b");
+    expect(saveButton()).toBeDisabled();
+
+    await act(async () => pending.resolve(prefs(true)));
+    expect(fundedEmail()).toHaveAttribute("aria-checked", "true");
+    expect(saveButton()).toBeEnabled();
   });
 });

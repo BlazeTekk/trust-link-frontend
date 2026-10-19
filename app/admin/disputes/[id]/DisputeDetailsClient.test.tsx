@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { resolveDispute } from "@/lib/api";
+import { ApiError, getDispute, resolveDispute } from "@/lib/api";
 import { type Dispute,DisputeStatusConst, EscrowStatusConst } from "@/types";
 
 import { DisputeDetailsClient } from "./DisputeDetailsClient";
@@ -15,15 +15,19 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
-// Mock useWallet
-vi.mock("@/hooks/useWallet", () => ({
-  default: () => ({
-    token: "mock-token",
-  }),
+const wallet = vi.hoisted(() => ({
+  token: "mock-token" as string | null,
+  connect: vi.fn(),
 }));
 
-// Mock the API
-vi.mock("@/lib/api", () => ({
+// Mock useWallet
+vi.mock("@/hooks/useWallet", () => ({
+  default: () => wallet,
+}));
+
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
+  getDispute: vi.fn(),
   resolveDispute: vi.fn(),
 }));
 
@@ -82,11 +86,19 @@ const mockDispute: Dispute = {
 describe("DisputeDetailsClient", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    wallet.token = "mock-token";
+    vi.mocked(getDispute).mockResolvedValue(mockDispute);
   });
 
-  it("renders dispute details correctly", () => {
-    render(<DisputeDetailsClient dispute={mockDispute} />);
+  async function renderDetails() {
+    render(<DisputeDetailsClient disputeId="dispute-1" />);
+    await screen.findByText("Item not as described");
+  }
 
+  it("loads dispute details using the active wallet token", async () => {
+    await renderDetails();
+
+    expect(getDispute).toHaveBeenCalledWith("dispute-1", "mock-token");
     expect(screen.getByText("High-end Headphones")).toBeInTheDocument();
     expect(screen.getByText("100.00 USDC")).toBeInTheDocument();
     expect(screen.getByText("Item not as described")).toBeInTheDocument();
@@ -94,8 +106,42 @@ describe("DisputeDetailsClient", () => {
     expect(screen.getByText("View Attachment 2")).toBeInTheDocument();
   });
 
-  it("shows confirmation dialog when 'Release to Vendor' is clicked", () => {
-    render(<DisputeDetailsClient dispute={mockDispute} />);
+  it("shows wallet guidance without exposing dispute details when disconnected", () => {
+    wallet.token = null;
+    render(<DisputeDetailsClient disputeId="dispute-1" />);
+
+    expect(screen.getByText("Connect your wallet to view this dispute.")).toBeInTheDocument();
+    expect(screen.queryByText("Item not as described")).not.toBeInTheDocument();
+    expect(getDispute).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [401, "Session expired"],
+    [403, "Access denied"],
+    [404, "Dispute not found"],
+  ])("shows a distinct state for HTTP %i", async (status, heading) => {
+    vi.mocked(getDispute).mockRejectedValueOnce(new ApiError(status, "private response"));
+    render(<DisputeDetailsClient disputeId="dispute-1" />);
+
+    expect(await screen.findByText(heading)).toBeInTheDocument();
+    expect(screen.queryByText("private response")).not.toBeInTheDocument();
+    expect(screen.queryByText("Item not as described")).not.toBeInTheDocument();
+  });
+
+  it("offers retry for service failures without showing case text", async () => {
+    vi.mocked(getDispute).mockRejectedValueOnce(new ApiError(503, "private response"));
+    render(<DisputeDetailsClient disputeId="dispute-1" />);
+
+    expect(await screen.findByText("We couldn't load dispute details")).toBeInTheDocument();
+    expect(screen.queryByText("private response")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await screen.findByText("Item not as described");
+    expect(getDispute).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows confirmation dialog when 'Release to Vendor' is clicked", async () => {
+    await renderDetails();
 
     fireEvent.click(screen.getByText("Release to Vendor"));
 
@@ -103,8 +149,8 @@ describe("DisputeDetailsClient", () => {
     expect(screen.getByText(/Are you sure you want to release the funds to the vendor/)).toBeInTheDocument();
   });
 
-  it("shows confirmation dialog when 'Refund Buyer' is clicked", () => {
-    render(<DisputeDetailsClient dispute={mockDispute} />);
+  it("shows confirmation dialog when 'Refund Buyer' is clicked", async () => {
+    await renderDetails();
 
     fireEvent.click(screen.getByText("Refund Buyer"));
 
@@ -112,8 +158,8 @@ describe("DisputeDetailsClient", () => {
     expect(screen.getByText(/Are you sure you want to refund the buyer/)).toBeInTheDocument();
   });
 
-  it("closes confirmation dialog when 'Cancel' is clicked", () => {
-    render(<DisputeDetailsClient dispute={mockDispute} />);
+  it("closes confirmation dialog when 'Cancel' is clicked", async () => {
+    await renderDetails();
 
     fireEvent.click(screen.getByText("Release to Vendor"));
     fireEvent.click(screen.getByText("Cancel"));
@@ -129,7 +175,7 @@ describe("DisputeDetailsClient", () => {
       })
     );
 
-    render(<DisputeDetailsClient dispute={mockDispute} />);
+    await renderDetails();
 
     expect(screen.getByTestId("dispute-status-badge")).toHaveTextContent("OPEN");
     expect(screen.getByTestId("escrow-status-badge")).toHaveTextContent("DISPUTED");
@@ -154,7 +200,7 @@ describe("DisputeDetailsClient", () => {
   it("rolls back the optimistic update and shows a toast when the API fails", async () => {
     vi.mocked(resolveDispute).mockRejectedValueOnce(new Error("Network unreachable"));
 
-    render(<DisputeDetailsClient dispute={mockDispute} />);
+    await renderDetails();
 
     fireEvent.click(screen.getByText("Refund Buyer"));
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));

@@ -1,12 +1,14 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { ApiError } from "@/lib/api";
 import { Escrow, EscrowStatusConst } from "@/types";
 
 import TrackPage from "./page";
 
 // Mock the API
-vi.mock("@/lib/api", () => ({
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
   getEscrow: vi.fn(),
 }));
 
@@ -80,7 +82,7 @@ describe("TrackPage", () => {
 
   it("shows error message when escrow is not found", async () => {
     const { getEscrow } = await import("@/lib/api");
-    vi.mocked(getEscrow).mockRejectedValue(new Error("Not found"));
+    vi.mocked(getEscrow).mockRejectedValue(new ApiError(404, "Not found"));
 
     const params = Promise.resolve({ escrowId: "invalid_id" });
     const page = await TrackPage({ params });
@@ -89,5 +91,14 @@ describe("TrackPage", () => {
 
     expect(screen.getByText("Order Not Found")).toBeInTheDocument();
     expect(screen.getByText(/We couldn't find an order with ID:/)).toBeInTheDocument();
+  });
+
+  it("propagates service failures so the retryable route error boundary handles them", async () => {
+    const { getEscrow } = await import("@/lib/api");
+    vi.mocked(getEscrow).mockRejectedValue(new ApiError(503, "Service unavailable"));
+
+    await expect(
+      TrackPage({ params: Promise.resolve({ escrowId: "esc_123" }) })
+    ).rejects.toThrow("Service unavailable");
   });
 });
