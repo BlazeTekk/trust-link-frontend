@@ -9,6 +9,7 @@ import TrackingTimelineSkeleton from "@/components/tracking/TrackingTimelineSkel
 import FetchErrorState, { getFetchErrorMessage } from "@/components/ui/FetchErrorState";
 import { useEscrow } from "@/hooks/useEscrow";
 import { track } from "@/lib/analytics";
+import { UNAVAILABLE_DATE } from "@/lib/utils";
 import { Escrow, EscrowStatus, EscrowStatusConst } from "@/types";
 
 interface TrackingStage {
@@ -108,8 +109,8 @@ export default function TrackingTimeline({
     const activeError = fetchError || localError;
     return (
       <FetchErrorState
-        title="We couldn't load tracking status"
-        message={getFetchErrorMessage(activeError, "Failed to load tracking status.")}
+        title={t("tracking.loadErrorTitle")}
+        message={getFetchErrorMessage(activeError, t("tracking.loadError"))}
         onRetry={() => {
           setLocalError(null);
           void refetch();
@@ -216,14 +217,20 @@ export default function TrackingTimeline({
                   >
                     {t(stage.descriptionKey)}
                   </p>
-                  {isCurrent && activeEscrow.updatedAt && (
-                    <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
-                      {new Intl.DateTimeFormat(i18n.language, {
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                      }).format(new Date(activeEscrow.updatedAt))}
-                    </p>
-                  )}
+                  {isCurrent && activeEscrow.updatedAt && (() => {
+                    const updatedAt = new Date(activeEscrow.updatedAt);
+                    const timestamp = Number.isNaN(updatedAt.getTime())
+                      ? UNAVAILABLE_DATE
+                      : new Intl.DateTimeFormat(i18n.language, {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        }).format(updatedAt);
+                    return (
+                      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
+                        {timestamp}
+                      </p>
+                    );
+                  })()}
                 </div>
 
                     {/* Status indicator */}
@@ -255,7 +262,7 @@ export default function TrackingTimeline({
                     ? "bg-blue-600 dark:bg-blue-400"
                     : "bg-zinc-300 dark:bg-zinc-700"
                 }`}
-                aria-label={`Go to stage ${index + 1}`}
+                aria-label={t("tracking.goToStage", { stage: index + 1 })}
               />
             ))}
           </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { Eye } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import EmailPreview from "@/components/notifications/EmailPreview";
@@ -32,22 +32,50 @@ const DEFAULT_PREFS: VendorNotificationPreferences = {
 };
 
 export default function NotificationSettingsPage() {
-  const { token } = useWallet();
+  const { token, connect } = useWallet();
   const [prefs, setPrefs] = useState<VendorNotificationPreferences>(DEFAULT_PREFS);
+  const [loadedToken, setLoadedToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [previewEvent, setPreviewEvent] = useState<EventKey | null>(null);
 
-  useEffect(() => {
-    if (!token) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+  // Identifies the latest load; responses from older (superseded or
+  // cancelled) loads are ignored so they cannot overwrite current state.
+  const latestLoadRef = useRef(0);
+
+  const loadPreferences = useCallback(async (authToken: string) => {
+    const loadId = ++latestLoadRef.current;
     setIsLoading(true);
-    getVendorNotificationPreferences(token)
-      .then(setPrefs)
-      .catch(() => setLoadError("Failed to load notification preferences."))
-      .finally(() => setIsLoading(false));
-  }, [token]);
+    setLoadError(null);
+    setLoadedToken(null);
+    try {
+      const next = await getVendorNotificationPreferences(authToken);
+      if (loadId === latestLoadRef.current) {
+        setPrefs(next);
+        setLoadedToken(authToken);
+      }
+    } catch {
+      if (loadId === latestLoadRef.current) {
+        setLoadError("Failed to load notification preferences.");
+      }
+    } finally {
+      if (loadId === latestLoadRef.current) setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!token) {
+      latestLoadRef.current += 1;
+      return;
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadPreferences(token);
+    return () => {
+      // Cancel this token's load when the token changes or on unmount.
+      latestLoadRef.current += 1;
+    };
+  }, [token, loadPreferences]);
 
   function toggle(event: EventKey, channel: "email" | "sms") {
     setPrefs((prev) => ({
@@ -57,7 +85,7 @@ export default function NotificationSettingsPage() {
   }
 
   async function handleSave() {
-    if (!token) {
+    if (!token || loadedToken !== token) {
       toast.error("Connect your wallet to save preferences.");
       return;
     }
@@ -99,7 +127,20 @@ export default function NotificationSettingsPage() {
         </div>
 
         {/* Event rows */}
-        {isLoading ? (
+        {!token ? (
+          <div className="flex flex-col items-center gap-4 px-6 py-10 text-center" role="status">
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              Connect your wallet to manage notification preferences.
+            </p>
+            <button
+              type="button"
+              onClick={() => void connect()}
+              className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+            >
+              Connect wallet
+            </button>
+          </div>
+        ) : isLoading || (!loadError && loadedToken !== token) ? (
           <div className="space-y-px">
             {EVENTS.map(({ key }) => (
               <div
@@ -120,9 +161,20 @@ export default function NotificationSettingsPage() {
             ))}
           </div>
         ) : loadError ? (
-          <p className="px-6 py-8 text-center text-sm text-red-600 dark:text-red-400">
-            {loadError}
-          </p>
+          <div className="flex flex-col items-center gap-3 px-6 py-8 text-center">
+            <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+              {loadError}
+            </p>
+            {token && (
+              <button
+                type="button"
+                onClick={() => void loadPreferences(token)}
+                className="rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                Retry
+              </button>
+            )}
+          </div>
         ) : (
           <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
             {EVENTS.map(({ key, label }) => (
@@ -174,7 +226,7 @@ export default function NotificationSettingsPage() {
         <div className="border-t border-zinc-100 px-6 py-4 dark:border-zinc-800">
           <button
             onClick={handleSave}
-            disabled={isSaving || isLoading || !!loadError}
+            disabled={!token || loadedToken !== token || isSaving || isLoading || !!loadError}
             className="rounded-2xl bg-zinc-900 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
           >
             {isSaving ? "Saving…" : "Save preferences"}
@@ -182,7 +234,7 @@ export default function NotificationSettingsPage() {
         </div>
       </div>
 
-      {previewEvent && (
+      {token && previewEvent && (
         <EmailPreview
           eventKey={previewEvent}
           open={!!previewEvent}

@@ -2,21 +2,24 @@
 
 import { AlertCircle, Calendar, CheckCircle, DollarSign, ExternalLink, Package, User,XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
+import FetchErrorState from "@/components/ui/FetchErrorState";
+import { Skeleton } from "@/components/ui/Skeleton";
 import useWallet from "@/hooks/useWallet";
-import { resolveDispute } from "@/lib/api";
+import { ApiError, getDispute, resolveDispute } from "@/lib/api";
 import { formatTimeAgo } from "@/lib/utils";
 import { Dispute, EscrowStatus } from "@/types";
 import { formatUSDC } from "@/utils/currency";
 
 interface DisputeDetailsClientProps {
-  dispute: Dispute;
+  disputeId: string;
 }
 
 type Resolution = 'RELEASE_TO_VENDOR' | 'REFUND_BUYER';
+type DisputeLoadError = "unauthenticated" | "forbidden" | "not-found" | "service";
 
 /** Escrow state each resolution settles the funds into, used for the optimistic badge. */
 const RESOLVED_ESCROW_STATUS: Record<Resolution, EscrowStatus> = {
@@ -30,16 +33,112 @@ const DISPUTE_STATUS_STYLES: Record<Dispute['status'], string> = {
   RESOLVED: 'bg-emerald-100 text-emerald-700',
 };
 
-export function DisputeDetailsClient({ dispute }: DisputeDetailsClientProps) {
+export function DisputeDetailsClient({ disputeId }: DisputeDetailsClientProps) {
   const router = useRouter();
   const { i18n } = useTranslation();
-  const { token } = useWallet();
+  const { token, connect } = useWallet();
+  const [dispute, setDispute] = useState<Dispute | null>(null);
+  const [loadedToken, setLoadedToken] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<DisputeLoadError | null>(null);
   const [isResolving, setIsResolving] = useState(false);
   const [showConfirm, setShowConfirm] = useState<Resolution | null>(null);
+  const loadRequestRef = useRef(0);
   // Locally tracked copies of the server state so the badges can be updated
   // optimistically and rolled back if the resolve request fails.
-  const [disputeStatus, setDisputeStatus] = useState<Dispute['status']>(dispute.status);
-  const [escrowStatus, setEscrowStatus] = useState<EscrowStatus>(dispute.escrow.status);
+  const [disputeStatus, setDisputeStatus] = useState<Dispute['status']>("OPEN");
+  const [escrowStatus, setEscrowStatus] = useState<EscrowStatus>("DISPUTED");
+
+  const loadDispute = useCallback(async (authToken: string) => {
+    const requestId = ++loadRequestRef.current;
+    setIsLoading(true);
+    setLoadError(null);
+    setDispute(null);
+    setLoadedToken(null);
+
+    try {
+      const result = await getDispute(disputeId, authToken);
+      if (requestId === loadRequestRef.current) {
+        setDispute(result);
+        setLoadedToken(authToken);
+        setDisputeStatus(result.status);
+        setEscrowStatus(result.escrow.status);
+      }
+    } catch (error) {
+      if (requestId === loadRequestRef.current) {
+        const status = error instanceof ApiError ? error.status : 0;
+        setLoadError(
+          status === 401
+            ? "unauthenticated"
+            : status === 403
+              ? "forbidden"
+              : status === 404
+                ? "not-found"
+                : "service"
+        );
+      }
+    } finally {
+      if (requestId === loadRequestRef.current) setIsLoading(false);
+    }
+  }, [disputeId]);
+
+  useEffect(() => {
+    if (!token) {
+      loadRequestRef.current += 1;
+      return;
+    }
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadDispute(token);
+    return () => {
+      loadRequestRef.current += 1;
+    };
+  }, [token, loadDispute]);
+
+  if (!token) {
+    return (
+      <div className="rounded-xl border border-zinc-200 bg-white p-6 text-center dark:border-zinc-800 dark:bg-zinc-900" role="status">
+        <p className="mb-4 text-zinc-700 dark:text-zinc-300">Connect your wallet to view this dispute.</p>
+        <button type="button" onClick={() => void connect()} className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-zinc-900">
+          Connect wallet
+        </button>
+      </div>
+    );
+  }
+
+  if (isLoading || (!loadError && loadedToken !== token)) {
+    return <Skeleton className="h-64 w-full rounded-xl" role="status" aria-label="Loading dispute details" />;
+  }
+
+  if (loadError === "unauthenticated") {
+    return (
+      <FetchErrorState
+        title="Session expired"
+        message="Reconnect your wallet to access this dispute."
+        onRetry={() => void connect()}
+      />
+    );
+  }
+
+  if (loadError === "forbidden") {
+    return <FetchErrorState title="Access denied" message="Your account is not authorized to view this dispute." />;
+  }
+
+  if (loadError === "not-found") {
+    return <FetchErrorState title="Dispute not found" message="This dispute may have been removed or the link may be incorrect." />;
+  }
+
+  if (loadError === "service") {
+    return (
+      <FetchErrorState
+        title="We couldn't load dispute details"
+        message="The dispute service is unavailable. Please try again."
+        onRetry={() => void loadDispute(token)}
+      />
+    );
+  }
+
+  if (!dispute || loadedToken !== token) return null;
 
   const handleResolve = async (resolution: Resolution) => {
     const previousDisputeStatus = disputeStatus;

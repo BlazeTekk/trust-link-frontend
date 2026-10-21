@@ -6,8 +6,10 @@ import React from "react";
 export interface DisputeFormErrorProps {
   /** Human-readable failure reason, taken from the thrown error or the API response. */
   message: string;
-  /** Clears the error state and returns the wizard to step 1 so the user can resubmit. */
+  /** Clears the error state and returns the user to the populated draft so they can resubmit. */
   onRetry: () => void;
+  /** Discards the draft and restarts the wizard. The button is omitted when not provided. */
+  onStartOver?: () => void;
 }
 
 /**
@@ -23,6 +25,7 @@ export interface DisputeFormErrorProps {
 export function DisputeFormError({
   message,
   onRetry,
+  onStartOver,
 }: DisputeFormErrorProps) {
   return (
     <div
@@ -51,6 +54,16 @@ export function DisputeFormError({
         >
           Try Again
         </button>
+        {onStartOver && (
+          <button
+            type="button"
+            onClick={onStartOver}
+            data-testid="start-over-button"
+            className="ml-3 mt-5 cursor-pointer rounded border border-zinc-300 px-5 py-2.5 text-base text-foreground transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          >
+            Start Over
+          </button>
+        )}
       </div>
     </div>
   );

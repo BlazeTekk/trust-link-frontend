@@ -11,6 +11,12 @@ vi.mock("@/lib/api", () => ({
   shipEscrow: vi.fn(),
 }));
 
+const wallet = vi.hoisted(() => ({ token: "wallet-token" as string | null }));
+
+vi.mock("@/hooks/useWallet", () => ({
+  default: () => wallet,
+}));
+
 const defaultProps = {
   escrowId: "escrow-123",
   vendorName: "Test Vendor",
@@ -22,6 +28,8 @@ const defaultProps = {
 describe("ShipTrackingModal", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.clearAllMocks();
+    wallet.token = "wallet-token";
   });
 
   it("renders nothing when open is false", () => {
@@ -140,11 +148,26 @@ describe("ShipTrackingModal", () => {
     await user.click(screen.getByRole("button", { name: /submit/i }));
 
     await waitFor(() => {
-      expect(shipEscrow).toHaveBeenCalledWith("escrow-123", {
-        trackingId: "TRACK-999",
-        carrier: "GIGL",
-      });
+      expect(shipEscrow).toHaveBeenCalledWith(
+        "escrow-123",
+        { trackingId: "TRACK-999", carrier: "GIGL" },
+        "wallet-token",
+      );
     });
+  });
+
+  it("shows reconnection guidance without submitting when no token is available", async () => {
+    wallet.token = null;
+    const user = userEvent.setup();
+    render(<ShipTrackingModal {...defaultProps} />);
+
+    await user.type(screen.getByLabelText(/tracking id/i), "TRACK-001");
+    await user.click(screen.getByRole("button", { name: /submit/i }));
+
+    expect(await screen.findByText("Please reconnect your wallet to continue.")).toBeInTheDocument();
+    expect(shipEscrow).not.toHaveBeenCalled();
+    expect(defaultProps.onSuccess).not.toHaveBeenCalled();
+    expect(defaultProps.onClose).not.toHaveBeenCalled();
   });
 
   it("displays error message when the API call fails", async () => {

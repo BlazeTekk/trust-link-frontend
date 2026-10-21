@@ -8,11 +8,13 @@ import {
   Share2,
   X,
 } from "lucide-react";
-import { useRef } from "react";
+import type { RefObject } from "react";
+import { useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { track } from "@/lib/analytics";
+import { downloadQrCode } from "@/lib/utils/downloadQrCode";
 
 async function copyToClipboard(text: string): Promise<void> {
   if (!navigator.clipboard || !navigator.clipboard.writeText) {
@@ -31,6 +33,7 @@ interface EscrowLinkShareButtonsProps {
   errorMsg: string | null;
   onCopy: () => void;
   onNativeShare: () => void;
+  qrRef: RefObject<HTMLDivElement | null>;
 }
 
 export default function EscrowLinkShareButtons({
@@ -43,9 +46,31 @@ export default function EscrowLinkShareButtons({
   errorMsg,
   onCopy,
   onNativeShare,
+  qrRef,
 }: EscrowLinkShareButtonsProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const copyErrorId = useId();
+  const [failedCopy, setFailedCopy] = useState<{
+    platform: "instagram" | "twitter";
+    text: string;
+  } | null>(null);
   const canShare = typeof navigator !== "undefined" && Boolean(navigator.share);
+
+  const copySocialText = async (
+    text: string,
+    platform: "instagram" | "twitter"
+  ): Promise<boolean> => {
+    try {
+      await copyToClipboard(text);
+    } catch {
+      setFailedCopy({ platform, text });
+      toast.error("Couldn't copy share text. Select and copy it below.");
+      return false;
+    }
+
+    setFailedCopy(null);
+    return true;
+  };
 
   const shareWhatsApp = async () => {
     const text = `Pay for your order securely using TrustLink: ${url}`;
@@ -57,9 +82,8 @@ export default function EscrowLinkShareButtons({
         await track("link_shared", { platform: "whatsapp", method: "native" });
         return;
       } catch (err) {
-        if ((err as Error).name !== "AbortError") {
-          console.error("Share failed:", err);
-        }
+        if (err instanceof Error && err.name === "AbortError") return;
+        console.error("Share failed:", err);
       }
     }
 
@@ -79,35 +103,35 @@ export default function EscrowLinkShareButtons({
         await track("link_shared", { platform: "instagram", method: "native" });
         return;
       } catch (err) {
-        if ((err as Error).name !== "AbortError") {
-          console.error("Share failed:", err);
-        }
+        if (err instanceof Error && err.name === "AbortError") return;
+        console.error("Share failed:", err);
       }
     }
 
-    await copyToClipboard(igText);
+    if (!(await copySocialText(igText, "instagram"))) return;
     await track("link_shared", { platform: "instagram", method: "clipboard" });
     toast.success("Instagram share text copied!");
   };
 
   const copyTwitter = async () => {
-    const xUrl = `${url}?utm_source=twitter&utm_medium=share`;
+    const xUrl = new URL(url);
+    xUrl.searchParams.set("utm_source", "twitter");
+    xUrl.searchParams.set("utm_medium", "share");
     const text = `Pay securely via TrustLink escrow: ${title} (${amount}) ${xUrl}`;
-    await navigator.clipboard.writeText(text);
+    if (!(await copySocialText(text, "twitter"))) return;
     await track("link_copied", { platform: "twitter" });
     toast.success("Tweet text copied!");
   };
 
   const downloadQR = async () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const pngUrl = canvas.toDataURL("image/png");
-    const a = document.createElement("a");
-    a.href = pngUrl;
-    a.download = `escrow_${escrowId}.png`;
-    a.click();
-    await track("qr_code_downloaded", { escrowId });
+    try {
+      await downloadQrCode(qrRef.current?.querySelector("svg"), `escrow_${escrowId}.png`);
+    } catch {
+      toast.error("Could not download QR code. Please try again.");
+      return;
+    }
     toast.success("QR code downloaded");
+    void track("qr_code_downloaded", { escrowId });
   };
 
   return (
@@ -186,6 +210,24 @@ export default function EscrowLinkShareButtons({
         </Button>
       </div>
 
+      {failedCopy && (
+        <div className="space-y-2">
+          <p id={copyErrorId} role="alert" className="text-sm text-red-600 dark:text-red-400">
+            Couldn&apos;t copy {failedCopy.platform === "twitter" ? "Twitter/X" : "Instagram"} share text.
+            Select and copy the text below, or try the share button again.
+          </p>
+          <textarea
+            aria-label="Share text to copy manually"
+            aria-describedby={copyErrorId}
+            readOnly
+            value={failedCopy.text}
+            rows={4}
+            onFocus={(event) => event.currentTarget.select()}
+            className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+          />
+        </div>
+      )}
+
       {copyStatus === "success" && (
         <p className="mt-3 text-sm text-emerald-600" data-testid="copy-success">
           Link copied
@@ -196,8 +238,6 @@ export default function EscrowLinkShareButtons({
           {errorMsg}
         </p>
       )}
-
-      <canvas ref={canvasRef} className="hidden" />
     </div>
   );
 }

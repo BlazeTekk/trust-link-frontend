@@ -4,6 +4,11 @@ import { useCallback, useRef, useState } from "react";
 
 import type { DisputeFormValues } from "@/lib/validations/dispute";
 import {
+  DISPUTE_ERRORS,
+  isAllowedDisputeMimeType,
+  MAX_DISPUTE_FILE_SIZE,
+} from "@/lib/validations/dispute";
+import {
   validateStep1Data,
   validateStep2Data,
   validateStep3Data,
@@ -46,6 +51,10 @@ export function useDisputeFormState({
   const [submitMessage, setSubmitMessage] = useState("");
 
   const firstErrorRef = useRef<HTMLElement | null>(null);
+  // Synchronous guard against duplicate sends: `isSubmitting` only disables the
+  // submit button after a re-render, so a fast double activation could otherwise
+  // start two requests.
+  const submitInFlightRef = useRef(false);
 
   const validateStep = useCallback(
     (step: Step): boolean => {
@@ -113,26 +122,22 @@ export function useDisputeFormState({
   const handleFileUpload = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const selectedFiles = Array.from(e.target.files || []);
-      const allowedTypes = [
-        "image/jpeg",
-        "image/png",
-        "image/jpg",
-        "image/webp",
-        "application/pdf",
-      ];
-      const maxSize = 10 * 1024 * 1024;
+      // Clear the native selection once it has been copied so choosing the
+      // same file again (after removing or rejecting it) still fires a change
+      // event. Accepted files live in `formData.files`, not in the input.
+      e.target.value = "";
 
       const rejectedByType = selectedFiles.filter(
-        (file) => !allowedTypes.includes(file.type)
+        (file) => !isAllowedDisputeMimeType(file.type)
       );
       const rejectedBySize = selectedFiles.filter(
-        (file) => file.size > maxSize
+        (file) => file.size > MAX_DISPUTE_FILE_SIZE
       );
 
       if (rejectedByType.length > 0) {
         setErrors((prev) => ({
           ...prev,
-          files: "Please upload an image (JPG, PNG, WebP) or PDF.",
+          files: DISPUTE_ERRORS.fileType,
         }));
         return;
       }
@@ -140,7 +145,7 @@ export function useDisputeFormState({
       if (rejectedBySize.length > 0) {
         setErrors((prev) => ({
           ...prev,
-          files: "Each file must be 10 MB or smaller.",
+          files: DISPUTE_ERRORS.fileTooLarge,
         }));
         return;
       }
@@ -160,8 +165,10 @@ export function useDisputeFormState({
   );
 
   const handleSubmit = useCallback(async () => {
+    if (submitInFlightRef.current) return;
     if (!validateStep(4)) return;
 
+    submitInFlightRef.current = true;
     setIsSubmitting(true);
     setSubmitStatus("idle");
 
@@ -216,9 +223,22 @@ export function useDisputeFormState({
         onError(error);
       }
     } finally {
+      submitInFlightRef.current = false;
       setIsSubmitting(false);
     }
   }, [formData, onSubmit, apiEndpoint, onSuccess, onError, validateStep]);
+
+  /**
+   * Leaves the error screen and returns to the populated review step so the
+   * user can resend the same draft. Nothing is sent here; the request only
+   * goes out when the user activates Submit again.
+   */
+  const retrySubmission = useCallback(() => {
+    setCurrentStep(4);
+    setErrors({});
+    setSubmitStatus("idle");
+    setSubmitMessage("");
+  }, []);
 
   const resetForm = useCallback(() => {
     setFormData({
@@ -250,6 +270,7 @@ export function useDisputeFormState({
     handleFileUpload,
     removeFile,
     handleSubmit,
+    retrySubmission,
     resetForm,
   };
 }

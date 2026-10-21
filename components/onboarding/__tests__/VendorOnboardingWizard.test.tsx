@@ -297,6 +297,85 @@ describe("VendorOnboardingWizard", () => {
     });
   });
 
+  it("replaces wrong-type persisted fields before they reach validation", async () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        step: 1,
+        shopName: 42,
+        description: { text: "not a string" },
+        website: null,
+        shippingLocations: ["EU"],
+        completed: "yes",
+      })
+    );
+    render(<VendorOnboardingWizard />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Vendor Profile" })
+    ).toBeInTheDocument();
+    expect(shopNameInput()).toHaveValue("");
+    expect(descriptionInput()).toHaveValue("");
+    expect(websiteInput()).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+
+    fillValidProfile();
+    expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
+  });
+
+  it.each([7, -1, 1.5, "2", null])(
+    "recovers to the first step when the persisted step is %s",
+    async (step) => {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ step, shopName: "Restored Shop" })
+      );
+      render(<VendorOnboardingWizard />);
+
+      expect(
+        await screen.findByRole("heading", { name: "Connect Your Wallet" })
+      ).toBeInTheDocument();
+      await waitFor(() => {
+        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null");
+        expect(saved).toMatchObject({ step: 0, shopName: "Restored Shop" });
+      });
+    }
+  );
+
+  it.each(["null", "[]", '"draft"', "42"])(
+    "falls back to defaults when the persisted draft is %s",
+    async (raw) => {
+      localStorage.setItem(STORAGE_KEY, raw);
+      render(<VendorOnboardingWizard />);
+
+      expect(
+        await screen.findByRole("heading", { name: "Connect Your Wallet" })
+      ).toBeInTheDocument();
+    }
+  );
+
+  it("stays operable when storage access is denied", async () => {
+    const denied = () => {
+      throw new DOMException("denied", "SecurityError");
+    };
+    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(denied);
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(denied);
+    mockConnectedWallet();
+
+    try {
+      await renderAtProfileStep();
+      fillValidProfile();
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+
+      expect(
+        await screen.findByRole("heading", { name: "Review Your Store" })
+      ).toBeInTheDocument();
+    } finally {
+      getItem.mockRestore();
+      setItem.mockRestore();
+    }
+  });
+
   it("completes onboarding, clears persisted state, and routes to the dashboard", async () => {
     mockConnectedWallet();
     await renderAtProfileStep();
@@ -314,5 +393,92 @@ describe("VendorOnboardingWizard", () => {
     await waitFor(() => {
       expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
     });
+  });
+
+  it("does not complete when the wallet disconnects on the review step", async () => {
+    mockConnectedWallet();
+    const { rerender } = render(<VendorOnboardingWizard />);
+    await screen.findByRole("heading", { name: "Vendor Profile" });
+    fillValidProfile();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByRole("heading", { name: "Review Your Store" });
+
+    mockWallet();
+    rerender(<VendorOnboardingWizard />);
+    fireEvent.click(screen.getByRole("button", { name: "Complete Onboarding" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Connect Your Wallet" })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Onboarding Complete" })
+    ).not.toBeInTheDocument();
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull();
+  });
+
+  it("sends an invalid profile reached through the stepper back to the profile step", async () => {
+    mockConnectedWallet();
+    await renderAtProfileStep();
+
+    fireEvent.click(screen.getByRole("button", { name: /Review & Finish/ }));
+    await screen.findByRole("heading", { name: "Review Your Store" });
+    fireEvent.click(screen.getByRole("button", { name: "Complete Onboarding" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Vendor Profile" })
+    ).toBeInTheDocument();
+    expect(screen.getByText("Shop name is required.")).toBeInTheDocument();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("sends an invalid restored review draft back to the profile step", async () => {
+    mockConnectedWallet();
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        step: 1,
+        shopName: "Restored Shop",
+        description: "Too short",
+        website: "",
+        shippingLocations: "",
+        completed: false,
+      })
+    );
+    render(<VendorOnboardingWizard />);
+    await screen.findByDisplayValue("Restored Shop");
+    fireEvent.click(screen.getByRole("button", { name: /Review & Finish/ }));
+    await screen.findByRole("heading", { name: "Review Your Store" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Complete Onboarding" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Vendor Profile" })
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Description must be at least 20 characters.").length
+    ).toBeGreaterThan(0);
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("completes a valid connected review only once", async () => {
+    mockConnectedWallet();
+    await renderAtProfileStep();
+    fillValidProfile();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByRole("heading", { name: "Review Your Store" });
+
+    const finish = screen.getByRole("button", { name: "Complete Onboarding" });
+    fireEvent.click(finish);
+    fireEvent.click(finish);
+
+    expect(
+      await screen.findByRole("heading", { name: "Onboarding Complete" })
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    });
+    expect(mockPush).toHaveBeenCalledTimes(1);
+    expect(mockPush).toHaveBeenCalledWith("/dashboard");
   });
 });

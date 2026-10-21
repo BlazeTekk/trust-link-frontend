@@ -5,6 +5,9 @@ import {
   checkRateLimit,
   enforceRateLimit,
   getClientId,
+  getRateLimitKey,
+  isValidIp,
+  RATE_LIMITS,
 } from "@/lib/rateLimit";
 
 // These tests exercise the in-memory fallback (no UPSTASH_* env configured),
@@ -56,6 +59,73 @@ describe("getClientId", () => {
     });
     expect(getClientId(r)).toBe("1.1.1.1");
   });
+
+  it("ignores spoofed, non-IP x-forwarded-for values", () => {
+    const r = new Request("https://x.test", {
+      headers: { "x-forwarded-for": "not-an-ip, also-bad" },
+    });
+    expect(getClientId(r)).toBe("anonymous");
+  });
+
+  it("skips junk entries and uses the first valid IP", () => {
+    const r = new Request("https://x.test", {
+      headers: { "x-forwarded-for": "spoofed, 9.9.9.9, 10.0.0.1" },
+    });
+    expect(getClientId(r)).toBe("9.9.9.9");
+  });
+
+  it("prefers platform-set headers over client-controllable x-forwarded-for", () => {
+    const r = new Request("https://x.test", {
+      headers: {
+        "x-forwarded-for": "1.2.3.4",
+        "x-real-ip": "5.6.7.8",
+      },
+    });
+    expect(getClientId(r)).toBe("5.6.7.8");
+  });
+
+  it("accepts IPv6 values", () => {
+    const r = new Request("https://x.test", {
+      headers: { "x-forwarded-for": "2001:db8::1" },
+    });
+    expect(getClientId(r)).toBe("2001:db8::1");
+  });
+
+  it("rejects malformed IPs", () => {
+    expect(isValidIp("999.999.999.999")).toBe(false);
+    expect(isValidIp("256.0.0.1")).toBe(false);
+    expect(isValidIp("01.2.3.4")).toBe(false);
+    expect(isValidIp("not-an-ip")).toBe(false);
+    expect(isValidIp("1.2.3.4")).toBe(true);
+  });
+});
+
+describe("getRateLimitKey", () => {
+  it("uses a stable ip: bucket for identified clients", () => {
+    const r = new Request("https://x.test", {
+      headers: { "x-forwarded-for": "1.2.3.4" },
+    });
+    expect(getRateLimitKey(r)).toBe("default:ip:1.2.3.4");
+    expect(getRateLimitKey(r)).toBe(getRateLimitKey(r));
+    expect(getRateLimitKey(r, "escrow:create")).toBe("escrow:create:ip:1.2.3.4");
+  });
+
+  it("isolates unidentifiable callers instead of sharing one anonymous bucket", () => {
+    const a = getRateLimitKey(new Request("https://x.test"));
+    const b = getRateLimitKey(new Request("https://x.test"));
+    expect(a.startsWith("default:anonymous:")).toBe(true);
+    expect(b.startsWith("default:anonymous:")).toBe(true);
+    expect(a).not.toBe(b);
+  });
+});
+
+describe("RATE_LIMITS", () => {
+  it("declares distinct quotas per route class", () => {
+    expect(RATE_LIMITS.escrowRead).not.toEqual(RATE_LIMITS.escrowWrite);
+    expect(RATE_LIMITS.og.windowMs).not.toBe(RATE_LIMITS.escrowRead.windowMs);
+    expect(RATE_LIMITS.og.limit).toBeGreaterThan(0);
+    expect(RATE_LIMITS.escrowWrite.limit).toBeGreaterThan(0);
+  });
 });
 
 describe("checkRateLimit (in-memory fallback)", () => {
@@ -78,6 +148,25 @@ describe("checkRateLimit (in-memory fallback)", () => {
 
     const other = await checkRateLimit("ip-y", 1, 10_000);
     expect(other.success).toBe(true);
+  });
+
+  it("separates operation buckets while sharing requests within an operation", async () => {
+    const request = req("10.10.10.10");
+    expect(await enforceRateLimit(request, 1, 10_000, "og:image")).toBeNull();
+    expect(await enforceRateLimit(request, 1, 10_000, "escrow:create")).toBeNull();
+    expect(await enforceRateLimit(request, 1, 10_000, "og:image")).not.toBeNull();
+  });
+
+  it("separates memory buckets by requested policy", async () => {
+    expect(await checkRateLimit("same-operation", 1, 10_000)).toMatchObject({
+      success: true,
+      limit: 1,
+    });
+    expect(await checkRateLimit("same-operation", 2, 10_000)).toMatchObject({
+      success: true,
+      limit: 2,
+      remaining: 1,
+    });
   });
 
   it("resets after the window elapses", async () => {

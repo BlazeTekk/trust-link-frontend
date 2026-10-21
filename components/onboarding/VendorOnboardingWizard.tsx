@@ -44,12 +44,13 @@ export default function VendorOnboardingWizard() {
     handleBack,
     handleNext,
     handleFinish,
+    goToDashboard,
   } = useOnboardingWizard();
 
   /** Selects the screen corresponding to the wizard's current state. */
   const stepContent = () => {
     if (state.completed) {
-      return <OnboardingStepComplete onGoToDashboard={handleFinish} />;
+      return <OnboardingStepComplete onGoToDashboard={goToDashboard} />;
     }
 
     if (state.step === 0) {

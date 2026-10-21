@@ -6,7 +6,7 @@ import TrackingTimeline from "@/components/tracking/TrackingTimeline";
 import TrackingTimelineSkeleton from "@/components/tracking/TrackingTimelineSkeleton";
 import { Breadcrumb } from "@/components/ui/Breadcrumb";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { getEscrow } from "@/lib/api";
+import { ApiError, getEscrow } from "@/lib/api";
 import { setEscrowContext } from "@/lib/logger";
 import type { GetEscrowResponse } from "@/types/api";
 import { formatUSDC } from "@/utils/currency";
@@ -40,7 +40,11 @@ export default async function TrackPage({ params }: TrackPageProps) {
   let initialEscrow: GetEscrowResponse;
   try {
     initialEscrow = await getEscrow(escrowId);
-  } catch {
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 404) {
+      throw error;
+    }
+
     return (
       <main className="min-h-screen bg-zinc-50 p-6 dark:bg-black">
         <div className="mx-auto max-w-4xl">

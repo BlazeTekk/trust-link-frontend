@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { startTransition, useEffect, useMemo, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 
 import useWallet from "@/hooks/useWallet";
 
@@ -33,6 +33,39 @@ const defaultState: VendorOnboardingState = {
   completed: false,
 };
 
+const DRAFT_TEXT_FIELDS = ["shopName", "description", "website", "shippingLocations"] as const;
+
+function isOnboardingStep(value: unknown): value is OnboardingStep {
+  return value === 0 || value === 1 || value === 2;
+}
+
+/**
+ * Builds a usable draft from untrusted persisted data. Anything that is not a
+ * plain object yields the defaults; a step outside 0–2 falls back to the first
+ * step; non-string text fields become empty strings. `completed` is never
+ * restored because completed drafts are removed from storage, not saved.
+ */
+function sanitizeWizardState(value: unknown): VendorOnboardingState {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return defaultState;
+  }
+
+  const record = value as Record<string, unknown>;
+  const state: VendorOnboardingState = {
+    ...defaultState,
+    step: isOnboardingStep(record.step) ? record.step : defaultState.step,
+  };
+
+  for (const field of DRAFT_TEXT_FIELDS) {
+    const fieldValue = record[field];
+    if (typeof fieldValue === "string") {
+      state[field] = fieldValue;
+    }
+  }
+
+  return state;
+}
+
 function loadWizardState(): VendorOnboardingState {
   if (typeof window === "undefined") {
     return defaultState;
@@ -40,7 +73,7 @@ function loadWizardState(): VendorOnboardingState {
 
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? { ...defaultState, ...JSON.parse(raw) } : defaultState;
+    return raw ? sanitizeWizardState(JSON.parse(raw)) : defaultState;
   } catch {
     return defaultState;
   }
@@ -51,12 +84,18 @@ function saveWizardState(state: VendorOnboardingState) {
     return;
   }
 
-  if (state.completed) {
-    localStorage.removeItem(STORAGE_KEY);
-    return;
-  }
+  // Storage can be unavailable (privacy mode, quota, denied access); the
+  // wizard keeps working in memory without persistence.
+  try {
+    if (state.completed) {
+      localStorage.removeItem(STORAGE_KEY);
+      return;
+    }
 
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Ignore persistence failures.
+  }
 }
 
 export function useOnboardingWizard() {
@@ -65,6 +104,9 @@ export function useOnboardingWizard() {
   const [state, setState] = useState<VendorOnboardingState>(defaultState);
   const [hydrated, setHydrated] = useState(false);
   const [errors, setErrors] = useState<ValidationErrors>({});
+  // Set synchronously on completion so a repeated activation before the next
+  // render cannot complete onboarding twice.
+  const completedRef = useRef(false);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -164,8 +206,33 @@ export function useOnboardingWizard() {
     setState((current) => ({ ...current, step: Math.max(0, current.step - 1) as OnboardingStep }));
   };
 
+  /**
+   * Completes onboarding only if its prerequisites still hold. The review step
+   * is reachable through the stepper and restored drafts, so the wallet and
+   * profile are rechecked here and the user is sent to the step that needs
+   * attention instead.
+   */
   const handleFinish = () => {
+    if (completedRef.current || state.completed) {
+      return;
+    }
+
+    if (!wallet.isConnected) {
+      goToStep(0);
+      return;
+    }
+
+    if (!validateStep1()) {
+      goToStep(1);
+      return;
+    }
+
+    completedRef.current = true;
     setState((current) => ({ ...current, completed: true }));
+    router.push("/dashboard");
+  };
+
+  const goToDashboard = () => {
     router.push("/dashboard");
   };
 
@@ -180,5 +247,6 @@ export function useOnboardingWizard() {
     handleBack,
     handleNext,
     handleFinish,
+    goToDashboard,
   };
 }

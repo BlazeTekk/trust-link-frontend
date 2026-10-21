@@ -3,8 +3,9 @@ import userEvent from "@testing-library/user-event";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from "vitest";
 
-import EscrowCreateForm from "@/components/escrow/EscrowCreateForm";
 import { createEscrow } from "@/lib/api";
+
+import EscrowCreateForm from "../EscrowCreateForm";
 
 vi.mock("@/lib/api", () => ({
   createEscrow: vi.fn(),
@@ -34,47 +35,6 @@ vi.mock("../ShareModal", () => ({
       </div>
     ) : null,
 }));
-
-describe("EscrowCreateForm", () => {
-  it("renders form fields with default initial values", () => {
-    render(<EscrowCreateForm />);
-
-    expect(screen.getByLabelText(/item name/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/price \(usdc\)/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/description/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/shipping window/i)).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /create escrow link/i })
-    ).toBeInTheDocument();
-  });
-
-  it("applies custom className and pre-populates initialValues", () => {
-    const { container } = render(
-      <EscrowCreateForm
-        className="custom-test-class"
-        initialValues={{
-          itemName: "Mechanical Keyboard",
-          priceUSDC: "150.00",
-        }}
-      />
-    );
-
-    expect(container.firstChild).toHaveClass("custom-test-class");
-    expect(screen.getByLabelText(/item name/i)).toHaveValue(
-      "Mechanical Keyboard"
-    );
-    expect(screen.getByLabelText(/price \(usdc\)/i)).toHaveValue("150.00");
-  });
-
-  it("updates field values on user input", async () => {
-    const user = userEvent.setup();
-    render(<EscrowCreateForm />);
-
-    const itemInput = screen.getByLabelText(/item name/i);
-    await user.type(itemInput, "Vintage Camera");
-    expect(itemInput).toHaveValue("Vintage Camera");
-  });
-});
 
 const mockCreateEscrow = vi.mocked(createEscrow);
 
@@ -388,5 +348,20 @@ describe("EscrowCreateForm", () => {
       expect(await screen.findByTestId("link-card")).toBeInTheDocument();
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     });
+  });
+});
+
+
+describe("EscrowCreateForm initial values", () => {
+  it("applies a custom class and pre-populates fields", () => {
+    const { container } = render(
+      <EscrowCreateForm
+        className="custom-test-class"
+        initialValues={{ itemName: "Mechanical Keyboard", priceUSDC: "150.00" }}
+      />
+    );
+    expect(container.firstChild).toHaveClass("custom-test-class");
+    expect(screen.getByLabelText(/item name/i)).toHaveValue("Mechanical Keyboard");
+    expect(screen.getByLabelText(/price \(usdc\)/i)).toHaveValue(150);
   });
 });

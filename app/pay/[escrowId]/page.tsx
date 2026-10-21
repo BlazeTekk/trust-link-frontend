@@ -3,7 +3,7 @@ import type { Metadata } from "next"
 import { HowItWorks } from "@/components/payment/HowItWorks"
 import { Accordion } from "@/components/ui/Accordion"
 import { Breadcrumb } from "@/components/ui/Breadcrumb"
-import { getEscrow } from "@/lib/api"
+import { ApiError, getEscrow } from "@/lib/api"
 import type { GetEscrowResponse } from "@/types/api"
 
 import { PaymentEscrowClient } from "./PaymentEscrowClient"
@@ -74,7 +74,9 @@ export default async function PayPage({ params }: PayPageProps) {
 	let escrow: GetEscrowResponse
 	try {
 		escrow = await getEscrow(escrowId)
-	} catch {
+	} catch (error) {
+		if (!(error instanceof ApiError) || error.status !== 404) throw error
+
 		return (
 			<main className="min-h-screen min-h-dvh bg-zinc-50 p-6 dark:bg-black">
 				<div className="mx-auto max-w-4xl">

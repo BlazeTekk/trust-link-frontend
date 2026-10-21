@@ -49,7 +49,7 @@ export default function VendorDashboardList({
 }: VendorDashboardListProps) {
   const { t } = useTranslation();
 
-  const { escrows, setEscrows, error, setError, loadItems, retry } =
+  const { escrows, setEscrows, error, loadItems, retry } =
     useVendorEscrows({ errorMessage: t("dashboard.loadEscrowsError") });
   const filters = useEscrowFilters(escrows);
   const selection = useEscrowSelection(filters.filteredEscrows);
@@ -60,7 +60,7 @@ export default function VendorDashboardList({
     selectedCount: selection.selectedCount,
     translate: t,
   });
-  const cancel = useCancelEscrow({ translate: t, setEscrows, setError });
+  const cancel = useCancelEscrow({ translate: t, setEscrows });
   const ship = useShipTracking({ setEscrows, reload: loadItems });
 
   if (error) {

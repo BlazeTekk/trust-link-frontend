@@ -20,15 +20,6 @@ import { pollWithBackoff } from "./poll";
 /** Soroban contract calls can take a while to land — poll generously. */
 const SOROBAN_POLL_TIMEOUT_MS = 60_000;
 
-/** Loose shape of `server.sendTransaction` / `server.getTransaction` results. */
-interface SorobanTxStatus {
-  status?: string;
-  hash?: string;
-  errorResultXdr?: string;
-  resultXdr?: string;
-  error?: unknown;
-}
-
 /**
  * Env flag that swaps {@link submitPayment} onto a fake-hash path. Off unless
  * explicitly enabled, so no deployment can return a mock hash by accident.
@@ -135,16 +126,17 @@ export async function submitPayment(
 
   try {
     const account = await server.getAccount(sourceAccount);
-    const paymentOp = Operation.payment({
-      destination,
-      asset: Asset.native(),
-      amount: normalizedAmount,
-    }) as any; // eslint-disable-line @typescript-eslint/no-explicit-any -- Stellar SDK Operation.payment shape differs from addOperation param across versions
-    const tx = new TransactionBuilder(account as unknown as Account, {
+    const tx = new TransactionBuilder(account, {
       fee,
       networkPassphrase,
     })
-      .addOperation(paymentOp)
+      .addOperation(
+        Operation.payment({
+          destination,
+          asset: Asset.native(),
+          amount: normalizedAmount,
+        })
+      )
       .setTimeout(30)
       .build();
 
@@ -153,16 +145,11 @@ export async function submitPayment(
       TransactionBuilder.fromXDR(signedXdr, networkPassphrase)
     );
 
-    const sendResult = response as unknown as SorobanTxStatus;
-    const status = sendResult?.status;
-    if (status === "ERROR" || status === "FAILED") {
-      throw toTxError(
-        sendResult?.errorResultXdr || sendResult?.error,
-        "Transaction failed"
-      );
+    if (response.status === "ERROR") {
+      throw toTxError(transactionResultCode(response.errorResult), "Transaction failed");
     }
 
-    const hash = sendResult?.hash;
+    const hash = response.hash;
     if (!hash) {
       throw new Error("Transaction submission returned no hash");
     }
@@ -171,20 +158,7 @@ export async function submitPayment(
   } catch (error) {
     throw toTxError(error, "Transaction submission failed");
   }
-  if (!destination || !destination.trim()) {
-    throw new Error("Destination address is required");
-  }
 
-  // Feature flag check for mock payment in production
-  const useMockPayment = process.env.NEXT_PUBLIC_USE_MOCK_PAYMENT === "true";
-  
-  if (useMockPayment) {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    return "b2d8e9f...a1c3b5d7";
-  }
-
-  // Real implementation would go here
-  throw new Error("Payment submission not yet implemented");
 }
 
 export type ContractArg =
@@ -254,6 +228,15 @@ function toScVal(arg: ContractArg): xdr.ScVal {
   return arg instanceof xdr.ScVal ? arg : nativeToScVal(arg);
 }
 
+/** Best-effort extraction of the XDR result-code name (e.g. `"txFAILED"`) from a transaction result. */
+function transactionResultCode(result?: xdr.TransactionResult): string | undefined {
+  try {
+    return result?.result().switch().name;
+  } catch {
+    return undefined;
+  }
+}
+
 function toTxError(error: unknown, fallback: string): Error {
   const message = error instanceof Error ? error.message : String(error ?? fallback);
   const normalized = message.includes("TxFailed") || message.includes("tx_failed")
@@ -285,7 +268,7 @@ async function invokeSorobanContract(
     fee = BASE_FEE,
   } = options;
 
-  if (!contractId || !StrKey.isValidContract(contractId)) {
+  if (!isValidContractId(contractId)) {
     throw new Error("Invalid contract ID");
   }
 
@@ -320,48 +303,32 @@ async function invokeSorobanContract(
     const response = await server.sendTransaction(
       TransactionBuilder.fromXDR(signedXdr, networkPassphrase)
     );
-    const sendResult = response as unknown as SorobanTxStatus;
-    const status = sendResult?.status;
-
-    if (status === "ERROR" || status === "FAILED") {
-      throw toTxError(sendResult?.errorResultXdr || sendResult?.error, "Transaction failed");
+    if (response.status === "ERROR") {
+      throw toTxError(transactionResultCode(response.errorResult), "Transaction failed");
     }
 
-    if (status === "PENDING") {
-      const hash = sendResult.hash;
-      if (!hash) {
-        throw new Error("Pending transaction was submitted without a hash");
-      }
-
-      // Poll with backoff + jitter. A timeout still surfaces the hash so the
-      // transaction can be looked up instead of being lost.
-      const txResponse = await pollWithBackoff({
-        check: async () => {
-          const polled = (await server.getTransaction(hash)) as unknown as SorobanTxStatus;
-          if (polled?.status === "FAILED" || polled?.status === "ERROR") {
-            throw toTxError(polled.errorResultXdr || polled.resultXdr, "Transaction failed");
-          }
-          return polled?.status === "SUCCESS" ? polled : null;
-        },
-        timeoutMs: SOROBAN_POLL_TIMEOUT_MS,
-        onTimeout: (attempts) => new TransactionConfirmationTimeoutError(hash, attempts),
-      });
-
-      return {
-        hash,
-        resultXdr: txResponse?.resultXdr || "",
-      };
+    const hash = response.hash;
+    if (!hash) {
+      throw new Error("Pending transaction was submitted without a hash");
     }
 
-    // Already confirmed (non-pending) — surface hash without extra polling.
-    if (typeof sendResult?.hash === "string" && sendResult.hash) {
-      return {
-        hash: sendResult.hash,
-        resultXdr: sendResult?.resultXdr || "",
-      };
-    }
+    // Preserve the backoff timeout and parsed SDK result handling together.
+    const txResponse = await pollWithBackoff({
+      check: async () => {
+        const polled = await server.getTransaction(hash);
+        if (polled.status === rpc.Api.GetTransactionStatus.FAILED) {
+          throw toTxError(transactionResultCode(polled.resultXdr), "Transaction failed");
+        }
+        return polled.status === rpc.Api.GetTransactionStatus.SUCCESS ? polled : null;
+      },
+      timeoutMs: SOROBAN_POLL_TIMEOUT_MS,
+      onTimeout: (attempts) => new TransactionConfirmationTimeoutError(hash, attempts),
+    });
 
-    throw new Error("Transaction submission returned no hash");
+    return {
+      hash,
+      resultXdr: txResponse.resultXdr.toXDR("base64"),
+    };
   } catch (error) {
     if (error instanceof TransactionConfirmationTimeoutError) {
       throw error;
@@ -440,7 +407,7 @@ export function buildContractInvocation(options: ContractCallOptions): string {
   } = options;
 
   // Validate inputs
-  if (!contractId || !StrKey.isValidContract(contractId)) {
+  if (!isValidContractId(contractId)) {
     throw new Error("Invalid contract ID");
   }
 

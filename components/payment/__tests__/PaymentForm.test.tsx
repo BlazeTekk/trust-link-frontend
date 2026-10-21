@@ -5,12 +5,15 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, type Mock, vi } 
 
 import useWallet from "@/hooks/useWallet";
 import { patchBuyerContact } from "@/lib/api";
+import { generateReceiptPDF } from "@/lib/pdf";
 import { signTransaction } from "@/lib/stellar/freighter";
 import { EscrowStatusConst } from "@/types";
 
 import type { PaymentFormProps } from "../PaymentForm";
 
 let PaymentForm: React.ComponentType<PaymentFormProps>;
+
+vi.mock("@/lib/pdf", () => ({ generateReceiptPDF: vi.fn().mockResolvedValue(undefined) }));
 
 // Mock dependencies
 vi.mock("@/hooks/useWallet", () => ({
@@ -60,7 +63,19 @@ vi.mock("@/lib/explorer", () => ({
 }));
 
 vi.mock("@/components/providers/NetworkProvider", () => ({
-  useNetwork: vi.fn(() => ({ network: "testnet", isTestnet: true, isMainnet: false, toggleNetwork: vi.fn(), setNetwork: vi.fn() })),
+  useNetwork: vi.fn(() => ({
+    network: "testnet",
+    isTestnet: true,
+    isMainnet: false,
+    toggleNetwork: vi.fn(),
+    setNetwork: vi.fn(),
+    config: {
+      rpcUrl: "https://soroban-testnet.stellar.org",
+      networkPassphrase: "Test SDF Network ; September 2015",
+      horizonUrl: "https://horizon-testnet.stellar.org",
+      stellarExpertPrefix: "testnet",
+    },
+  })),
   NetworkProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
@@ -107,9 +122,9 @@ describe("PaymentForm", () => {
     render(<PaymentForm {...defaultProps} />);
 
     expect(screen.getByText("Payment Details")).toBeInTheDocument();
-    expect(screen.getByText("XLM 10")).toBeInTheDocument();
-    expect(screen.getByText("XLM 0.5")).toBeInTheDocument();
-    expect(screen.getByText("XLM 10.5")).toBeInTheDocument();
+    expect(screen.getByText("10.00 USDC")).toBeInTheDocument();
+    expect(screen.getByText("0.50 USDC")).toBeInTheDocument();
+    expect(screen.getByText("10.50 USDC")).toBeInTheDocument();
   });
 
   it("toggles email input when send receipt checkbox is clicked", () => {
@@ -238,5 +253,25 @@ describe("PaymentForm", () => {
     expect(screen.getByText("Escrow is no longer payable")).toBeInTheDocument();
     expect(toast.error).toHaveBeenCalledWith("Escrow is no longer payable");
     expect(signTransaction).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("PaymentForm receipt amounts", () => {
+  it("passes the displayed USDC amounts to the receipt generator", async () => {
+    render(<PaymentForm {...defaultProps} previewFormState="success" previewTxHash="confirmed-hash" />);
+    expect(screen.getByText("10.00 USDC")).toBeInTheDocument();
+    expect(screen.getByText("0.50 USDC")).toBeInTheDocument();
+    expect(screen.getByText("10.50 USDC")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Download Receipt" }));
+    await waitFor(() => expect(generateReceiptPDF).toHaveBeenCalledWith({
+      escrowId: defaultProps.escrowId,
+      itemName: defaultProps.itemName,
+      amount: 10,
+      protocolFee: 0.5,
+      total: 10.5,
+      txHash: "confirmed-hash",
+      timestamp: undefined,
+    }));
   });
 });

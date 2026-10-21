@@ -27,6 +27,20 @@ function setFiles(input: HTMLInputElement, files: File[]) {
   fireEvent.change(input);
 }
 
+// jsdom refuses non-empty values on file inputs, so emulate a browser that
+// remembers the picked file's path until the app clears it.
+function selectFiles(input: HTMLInputElement, files: File[]) {
+  let value = files.length ? `C:\\fakepath\\${files[0].name}` : "";
+  Object.defineProperty(input, "value", {
+    get: () => value,
+    set: (next: string) => {
+      value = next;
+    },
+    configurable: true,
+  });
+  setFiles(input, files);
+}
+
 describe("Production DisputeForm - app/dispute/[id]/DisputeForm", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -183,6 +197,52 @@ describe("Production DisputeForm - app/dispute/[id]/DisputeForm", () => {
       });
       expect(screen.getByText(/dispute submitted/i)).toBeInTheDocument();
       expect(screen.getByText(/reference id: disp-success/i)).toBeInTheDocument();
+    });
+  });
+
+  describe("reselecting evidence files", () => {
+    function fileInput() {
+      return screen.getByLabelText(/upload images or pdfs/i) as HTMLInputElement;
+    }
+
+    it("clears the native input so a removed file can be selected again", () => {
+      render(<DisputeForm escrowId="123" />);
+      const file = new File(["test"], "receipt.pdf", { type: "application/pdf" });
+
+      selectFiles(fileInput(), [file]);
+      expect(fileInput().value).toBe("");
+      expect(screen.getByText("receipt.pdf")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: /remove receipt.pdf/i }));
+      expect(screen.queryByText("receipt.pdf")).not.toBeInTheDocument();
+
+      selectFiles(fileInput(), [file]);
+      expect(screen.getByText("receipt.pdf")).toBeInTheDocument();
+    });
+
+    it("clears the native input after a rejected selection so it can be retried", () => {
+      render(<DisputeForm escrowId="123" />);
+      const huge = new File(["x".repeat(11 * 1024 * 1024)], "huge.pdf", {
+        type: "application/pdf",
+      });
+
+      selectFiles(fileInput(), [huge]);
+      expect(fileInput().value).toBe("");
+      expect(screen.getByText(/Each file must be 10 MB or smaller\./i)).toBeInTheDocument();
+
+      selectFiles(fileInput(), [huge]);
+      expect(screen.getByText(/Each file must be 10 MB or smaller\./i)).toBeInTheDocument();
+    });
+
+    it("keeps accepted files listed after the native input is reset", () => {
+      render(<DisputeForm escrowId="123" />);
+
+      selectFiles(fileInput(), [new File(["a"], "a.pdf", { type: "application/pdf" })]);
+      selectFiles(fileInput(), [new File(["b"], "b.png", { type: "image/png" })]);
+
+      expect(fileInput().value).toBe("");
+      expect(screen.getByText("a.pdf")).toBeInTheDocument();
+      expect(screen.getByText("b.png")).toBeInTheDocument();
     });
   });
 });

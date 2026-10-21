@@ -1,7 +1,6 @@
-import React, { useMemo } from "react";
+import React, { useLayoutEffect, useRef } from "react";
 
 import { FormField } from "@/components/ui/FormField";
-import OptimizedImage from "@/components/ui/OptimizedImage";
 import type { DisputeFormValues } from "@/lib/validations/dispute";
 
 /**
@@ -68,21 +67,26 @@ interface ImagePreviewProps {
  * Uses `OptimizedImage` with explicit `width={64}` and `height={64}` to enforce
  * layout stability and prevent cumulative layout shift (CLS).
  *
- * The blob URL is created in an effect and written straight to the image element
- * via ref. That avoids an extra render pass and ties the URL's lifetime to this
- * element: it is revoked when the file changes or the thumbnail unmounts,
- * preventing blob URL memory leaks.
+ * The blob URL is owned by this component and revoked when the file changes or
+ * the thumbnail unmounts.
  */
 function ImagePreview({ file, index }: ImagePreviewProps) {
-  const src = useMemo(() => URL.createObjectURL(file), [file]);
+  const imageRef = useRef<HTMLImageElement>(null);
+
+  useLayoutEffect(() => {
+    const objectUrl = URL.createObjectURL(file);
+    if (imageRef.current) imageRef.current.src = objectUrl;
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [file]);
 
   return (
-    <OptimizedImage
-      src={src}
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      ref={imageRef}
       alt={`Preview of ${file.name}`}
       width={64}
       height={64}
-      useBlur={false}
+      loading="lazy"
       className="h-16 w-16 rounded object-cover border border-zinc-200 dark:border-zinc-700"
       data-testid={`preview-${index}`}
     />

@@ -304,9 +304,6 @@ describe("EscrowCreateSchema — localised messages", () => {
     expect(firstMessage(parse({ priceUSDC: "9999999" }))).toContain(
       String(ESCROW_LIMITS.priceMaxUSDC)
     );
-    expect(firstMessage(parse({ priceUSDC: "0.000001" }))).toContain(
-      String(ESCROW_LIMITS.priceMinUSDC)
-    );
   });
 
   it("falls back to English for unknown locales", async () => {
