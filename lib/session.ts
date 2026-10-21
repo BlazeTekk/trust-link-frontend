@@ -23,7 +23,15 @@ export const SESSION_EXPIRED_EVENT = "app:unauthorized" as const;
 export const SESSION_EXPIRED_REDIRECT = "/" as const;
 
 /** All localStorage keys that must be cleared on session expiry. */
-export const SESSION_STORAGE_KEYS = [SESSION_KEY, PUBLIC_KEY_STORAGE_KEY] as const;
+export const SESSION_STORAGE_KEYS = [
+  SESSION_KEY,
+  PUBLIC_KEY_STORAGE_KEY,
+  // Legacy keys from before the `@/lib/session` unification — must still be
+  // cleared so a 401 never leaves a half-cleared session behind.
+  "wallet.token",
+  "wallet.jwk",
+  "wallet.session",
+] as const;
 
 /**
  * Clears every session-related localStorage key and notifies listeners.

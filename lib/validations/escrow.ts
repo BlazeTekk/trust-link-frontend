@@ -111,7 +111,7 @@ export const EscrowCreateSchema = z.object({
     .min(1, "Description is required.")
     .max(2000, "Description must not exceed 2000 characters."),
   shippingWindow: z.enum(shippingOptions, {
-    errorMap: () => ({ message: "Please select a valid shipping window." }),
+    error: "Please select a valid shipping window.",
   }),
 }).strict();
 

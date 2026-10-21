@@ -8,11 +8,15 @@ import {
 } from "@/components/escrow/EscrowCreateFormFields";
 import { EscrowCreateFormResult } from "@/components/escrow/EscrowCreateFormResult";
 import ShareModal from "@/components/escrow/ShareModal";
+import { FormField } from "@/components/ui/FormField";
 import { createEscrow, type EscrowInput } from "@/lib/api";
+import { renderMarkdown } from "@/lib/markdown";
 import {
+  ESCROW_LIMITS,
   EscrowCreateSchema,
   type EscrowCreateValues,
   shippingOptions,
+  type ShippingWindow,
 } from "@/lib/validations";
 
 /**
@@ -53,18 +57,6 @@ export default function EscrowCreateForm({
   className = "",
   initialValues,
 }: EscrowCreateFormProps = {}) {
- * Form for creating a new escrow link.
- *
- * Collects item name, price (USDC), description (markdown), and shipping
- * window from the seller, validates input via `EscrowCreateSchema`, calls the
- * API to create the escrow, and displays the resulting shareable link with a
- * QR code and sharing options.
- *
- * Field rendering lives in `EscrowCreateFormFields` and the post-submission
- * shareable-link card in `EscrowCreateFormResult`; this component owns state,
- * validation, and submission.
- */
-export default function EscrowCreateForm() {
   const [values, setValues] = useState<EscrowCreateValues>({
     itemName: initialValues?.itemName ?? "",
     priceUSDC: initialValues?.priceUSDC ?? "",
@@ -101,12 +93,8 @@ export default function EscrowCreateForm() {
     setErrors((current) => ({ ...current, [field]: undefined }));
   };
 
-  /**
-   * Copies the generated escrow result URL to the system clipboard and displays a confirmation status.
-   */
-  const copyResultUrl = async (): Promise<void> => {
   /** Copy the generated escrow URL to the clipboard. */
-  const copyResultUrl = async () => {
+  const copyResultUrl = async (): Promise<void> => {
     if (!resultUrl) {
       return;
     }
@@ -121,15 +109,6 @@ export default function EscrowCreateForm() {
    * @param event - React FormEvent submitted by the user.
    */
   const onSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
-  /** Trigger a QR code download for the generated escrow URL. */
-  const downloadQR = async () => {
-    const canvas = canvasRef.current;
-    if (!canvas || !resultUrl) return;
-    // PNG export handled by the shared QrCode component
-    toast.success("QR code downloaded");
-  };
-
-  const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (submittingRef.current) return;
@@ -206,7 +185,6 @@ export default function EscrowCreateForm() {
             placeholder="e.g. Vintage mechanical keyboard"
             disabled={isSubmitting}
             maxLength={ESCROW_LIMITS.itemNameMaxLength}
-            placeholder="Awesome Widget"
             className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-zinc-950 outline-none ring-0 transition focus:border-zinc-400 focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50 dark:focus-visible:ring-zinc-300"
             aria-invalid={Boolean(errors.itemName)}
             aria-describedby={errors.itemName ? "itemName-error" : undefined}
@@ -332,7 +310,6 @@ export default function EscrowCreateForm() {
               {errors.shippingWindow}
             </p>
           ) : null}
-        </div>
         </FormField>
         <EscrowCreateFormFields
           values={values}

@@ -77,7 +77,7 @@ export function ConfirmDeliveryButton({
   async function handleConfirm() {
     setIsPending(true);
     try {
-      await confirmDelivery(escrowId, token);
+      await confirmDelivery(escrowId, token ?? undefined);
 
       closeDialog();
       toast.success("Delivery confirmed — funds released.");

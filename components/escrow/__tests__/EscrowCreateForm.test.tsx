@@ -1,19 +1,10 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
-
-import EscrowCreateForm from "@/components/escrow/EscrowCreateForm";
-
-vi.mock("@/lib/api", () => ({
-  createEscrow: vi.fn().mockResolvedValue({
-    url: "https://trustlink.test/pay/escrow-123",
-  }),
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from "vitest";
 
+import EscrowCreateForm from "@/components/escrow/EscrowCreateForm";
 import { createEscrow } from "@/lib/api";
-
-import EscrowCreateForm from "../EscrowCreateForm";
 
 vi.mock("@/lib/api", () => ({
   createEscrow: vi.fn(),
@@ -24,6 +15,24 @@ vi.mock("sonner", () => ({
     success: vi.fn(),
     error: vi.fn(),
   },
+}));
+
+vi.mock("../ShareModal", () => ({
+  default: ({
+    isOpen,
+    url,
+    escrowId,
+  }: {
+    isOpen: boolean;
+    url: string;
+    escrowId: string;
+  }) =>
+    isOpen ? (
+      <div data-testid="share-modal">
+        {url}
+        {escrowId}
+      </div>
+    ) : null,
 }));
 
 describe("EscrowCreateForm", () => {
@@ -64,23 +73,8 @@ describe("EscrowCreateForm", () => {
     const itemInput = screen.getByLabelText(/item name/i);
     await user.type(itemInput, "Vintage Camera");
     expect(itemInput).toHaveValue("Vintage Camera");
-vi.mock("../ShareModal", () => ({
-  default: ({
-    isOpen,
-    url,
-    escrowId,
-  }: {
-    isOpen: boolean;
-    url: string;
-    escrowId: string;
-  }) =>
-    isOpen ? (
-      <div data-testid="share-modal">
-        {url}
-        {escrowId}
-      </div>
-    ) : null,
-}));
+  });
+});
 
 const mockCreateEscrow = vi.mocked(createEscrow);
 

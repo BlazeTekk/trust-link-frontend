@@ -18,7 +18,6 @@ import {
   setAllowed,
   signTransaction as freighterSignTransaction,
 } from "@stellar/freighter-api";
-import { Networks } from "@stellar/stellar-sdk";
 
 import { captureWalletError } from "@/lib/logger";
 
@@ -108,12 +107,6 @@ export async function signTransaction(
     if (!(await isFreighterInstalled())) {
       throw new Error("Freighter not installed");
     }
-
-    const networkPassphrase = network === "PUBLIC" 
-      ? Networks.PUBLIC 
-      : network === "TESTNET" 
-        ? Networks.TESTNET 
-        : network;
 
     const response = (await freighterSignTransaction(xdr, {
       networkPassphrase,

@@ -1,29 +1,19 @@
-import { useCallback, useEffect } from 'react';
-import { SESSION_KEY, SESSION_EXPIRED_EVENT, handleSessionExpired } from '../lib/auth/constants';
+﻿"use client";
 
-export interface WalletState {
-  address: string | null;
-  connected: boolean;
-}
-
-export function useWallet(): WalletState {
-  const getSession = useCallback((): WalletState => {
-    try {
-      const session = sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(SESSION_KEY);
-      return session ? JSON.parse(session) : { address: null, connected: false };
-    } catch {
-      return { address: null, connected: false };
-    }
-  }, []);
 import { useContext, useEffect } from "react";
 
 import { WalletContext } from "@/components/providers/WalletProvider";
-import { handleSessionExpired } from "@/lib/session";
+import {
+  SESSION_EXPIRED_EVENT,
+  SESSION_KEY,
+} from "@/lib/session";
 
 /**
- * Single source of truth for the localStorage key storing the wallet JWT.
+ * Re-exported for backward compatibility — `@/lib/session` is the
+ * single source of truth. Existing imports from `@/hooks/useWallet`
+ * keep working.
  */
-export const SESSION_KEY = "wallet.jwt";
+export { SESSION_EXPIRED_EVENT, SESSION_KEY };
 
 /**
  * Stores the current session-expired handler set by the active `useWallet`.
@@ -47,8 +37,8 @@ export function onSessionExpired(handler: () => void): () => void {
 }
 
 /**
- * Handles an expired session by delegating to the shared `handleSessionExpired`
- * from `../lib/session`, then notifying the registered handler.
+ * Handles an expired session: clears the stored JWT and triggers the
+ * session-expired callback registered by `useWallet`.
  *
  * Call this from `lib/api/client.ts` when a 401 response is received.
  */
@@ -57,7 +47,6 @@ export function handleSessionExpired(): void {
     window.localStorage.removeItem(SESSION_KEY);
     window.location.assign("/?reason=session_expired");
   }
-  handleSessionExpired();
   sessionExpiredHandler?.();
 }
 
@@ -73,20 +62,20 @@ export function handleSessionExpired(): void {
  *
  * @returns An object containing:
  *   - `publicKey`       - The connected Stellar public key, or `null` when disconnected.
- *   - `token`          - JWT auth token obtained via SEP-10 challenge/response, or `null`.
- *   - `jwt`            - Alias for the current JWT; always available in memory.
+ *   - `token`           - JWT auth token obtained via SEP-10 challenge/response, or `null`.
+ *   - `jwt`             - Alias for the current JWT; always available in memory.
  *   - `isConnected`     - `true` when a public key is present and the wallet is connected.
- *   - `isInstalled`      - `true` when the Freighter browser extension is detected.
- *   - `status`          - Current wallet state:
+ *   - `isInstalled`     - `true` when the Freighter browser extension is detected.
+ *   - `status`        - Current wallet state:
  *     `loading` | `connected` | `disconnected` | `not-installed` | `error`.
  *   - `connect`         - `() => Promise<boolean>` - Initiates the Freighter connection
  *     and SEP-10 authentication flow. Resolves `true` on success, `false` on failure.
- *   - `disconnect`      - () => void - Clears the session and removes stored credentials.
- *   - `signTransaction` - `(xdr: string, network?: string) => Promise<string>`  - Signs a
+ *   - `disconnect`      - `() => void` - Clears the session and removes stored credentials.
+ *   - `signTransaction` - `(xdr: string, network?: string) => Promise<string>` - Signs a
  *     Stellar XDR transaction via Freighter. `network` overrides the configured network.
  *   - `isLoading`       - `true` while a connection or auth request is in flight.
- *   - `walletReady`    -  true` once the initial wallet state has been hydrated.
- *   - `error`          - The last `Error` thrown by connect/authenticate, or `null`.
+ *   - `walletReady`    - `true` once the initial wallet state has been hydrated.
+ *   - `error`           - The last `Error` thrown by connect/authenticate, or `null`.
  *
  * @throws {Error} If called outside of a <WalletProvider>.
  *
@@ -99,7 +88,7 @@ export function handleSessionExpired(): void {
  *
  *   return (
  *     <button onClick={isConnected ? disconnect : connect} disabled={isLoading}>
- *       {isLoading ? "Connecting…" : isConnected ? "Disconnect" : "Connect Wallet"}
+ *       {isLoading ? "ConnectingΓÇª" : isConnected ? "Disconnect" : "Connect Wallet"}
  *     </button>
  *   );
  * }
@@ -113,15 +102,14 @@ export default function useWallet() {
     throw new Error("useWallet must be used within a WalletProvider");
   }
 
-  const clearSession = useCallback((): void => {
-    handleSessionExpired();
-  }, []);
+  const { disconnect } = context;
 
   useEffect(() => {
-    const handleExpired = () => clearSession();
-    window.addEventListener(SESSION_EXPIRED_EVENT, handleExpired);
-    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handleExpired);
-  }, [clearSession]);
+    return onSessionExpired(() => {
+      disconnect();
+      window.alert("Session expired. Please reconnect your wallet.");
+    });
+  }, [disconnect]);
 
-  return getSession();
+  return context;
 }

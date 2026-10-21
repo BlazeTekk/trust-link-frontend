@@ -584,13 +584,13 @@ export async function patchVendorNotifications(
  * Updates buyer contact information for an escrow.
  *
  * @param escrowId - The escrow ID.
- * @param data - Optional email and/or phone number.
+ * @param data - Optional email, phone number, and email-receipt preference.
  * @param token - Optional Bearer auth token.
  * @returns Promise resolving to empty response upon success.
  */
 export async function patchBuyerContact(
   escrowId: string,
-  data: { email?: string; phone?: string },
+  data: { email?: string; phone?: string; emailReceipt?: boolean },
   token?: string,
 ): Promise<EmptyResponse> {
   await request<EmptyResponse>(
@@ -657,7 +657,7 @@ export interface ApiClient {
   ) => Promise<EmptyResponse>;
   patchBuyerContact: (
     escrowId: string,
-    data: { email?: string; phone?: string },
+    data: { email?: string; phone?: string; emailReceipt?: boolean },
   ) => Promise<EmptyResponse>;
   getVendorAnalytics: () => Promise<GetVendorAnalyticsResponse>;
 }
@@ -694,8 +694,10 @@ export function createApiClient(token?: string): ApiClient {
       prefs: VendorNotificationPreferences,
       authToken = token ?? "",
     ) => patchVendorNotifications(prefs, authToken),
-    patchBuyerContact: (escrowId: string, data: { email?: string; phone?: string }) =>
-      patchBuyerContact(escrowId, data, token),
+    patchBuyerContact: (
+      escrowId: string,
+      data: { email?: string; phone?: string; emailReceipt?: boolean },
+    ) => patchBuyerContact(escrowId, data, token),
     getVendorAnalytics: () => getVendorAnalytics(token),
   };
 }

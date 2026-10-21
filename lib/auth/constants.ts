@@ -1,10 +1,13 @@
-export const SESSION_KEY = 'wallet.session';
-export const SESSION_EXPIRED_EVENT = 'app:session_expired';
-
-export function handleSessionExpired(): void {
-  sessionStorage.removeItem(SESSION_KEY);
-  localStorage.removeItem(SESSION_KEY);
-  const event = new CustomEvent(SESSION_EXPIRED_EVENT);
-  window.dispatchEvent(event);
-  window.location.href = '/';
-}
+/**
+ * Backward-compatibility re-exports — `@/lib/session` is the single
+ * source of truth for session keys, events, and expiry handling.
+ * Existing imports from `@/lib/auth/constants` keep working.
+ */
+export {
+  handleSessionExpired,
+  PUBLIC_KEY_STORAGE_KEY,
+  SESSION_EXPIRED_EVENT,
+  SESSION_EXPIRED_REDIRECT,
+  SESSION_KEY,
+  SESSION_STORAGE_KEYS,
+} from "@/lib/session";
