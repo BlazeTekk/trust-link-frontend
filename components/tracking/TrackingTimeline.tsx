@@ -1,10 +1,11 @@
 "use client";
 
-import { CheckCircle2, Circle, Clock, Home,Package, Truck } from "lucide-react";
-import { startTransition,useEffect, useState } from "react";
+import { CheckCircle2, Circle, Clock, Package } from "lucide-react";
+import { startTransition, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ConfirmDeliveryButton } from "@/components/escrow/ConfirmDeliveryButton";
+import TrackingSection from "@/components/tracking/TrackingSection";
 import TrackingTimelineSkeleton from "@/components/tracking/TrackingTimelineSkeleton";
 import FetchErrorState, { getFetchErrorMessage } from "@/components/ui/FetchErrorState";
 import { useEscrow } from "@/hooks/useEscrow";
@@ -43,17 +44,10 @@ const TRACKING_STAGES: TrackingStage[] = [
     statuses: [EscrowStatusConst.SHIPPED, EscrowStatusConst.COMPLETED, EscrowStatusConst.RELEASED],
   },
   {
-    id: "delivery",
-    titleKey: "tracking.outForDelivery",
-    descriptionKey: "tracking.outForDeliveryDesc",
-    icon: Truck,
-    statuses: [EscrowStatusConst.SHIPPED, EscrowStatusConst.COMPLETED, EscrowStatusConst.RELEASED],
-  },
-  {
-    id: "delivered",
-    titleKey: "tracking.delivered",
-    descriptionKey: "tracking.deliveredDesc",
-    icon: Home,
+    id: "settled",
+    titleKey: "tracking.escrowCompleted",
+    descriptionKey: "tracking.escrowCompletedDesc",
+    icon: CheckCircle2,
     statuses: [EscrowStatusConst.COMPLETED, EscrowStatusConst.RELEASED],
   },
 ];
@@ -86,14 +80,18 @@ export default function TrackingTimeline({
   const activeEscrow = escrow || initialEscrow;
 
   const getCurrentStageIndex = (status: EscrowStatus): number => {
-    if (status === EscrowStatusConst.COMPLETED || status === EscrowStatusConst.RELEASED) return 4;
+    if (status === EscrowStatusConst.COMPLETED || status === EscrowStatusConst.RELEASED) return 3;
     if (status === EscrowStatusConst.SHIPPED) return 2;
     if (status === EscrowStatusConst.FUNDED) return 1;
     if (status === EscrowStatusConst.PENDING) return 0;
     return 0;
   };
 
-  const currentStageIndex = getCurrentStageIndex(activeEscrow?.status ?? EscrowStatusConst.PENDING);
+  // Historical escrow records retain confirmed progress during a dispute or refund.
+  const currentStageIndex = Math.max(
+    getCurrentStageIndex(activeEscrow.status),
+    ...activeEscrow.history.map((event) => getCurrentStageIndex(event.status)),
+  );
   const isShipped = activeEscrow?.status === EscrowStatusConst.SHIPPED;
 
   // Sync swipe index with the actual stage index when it changes
@@ -155,7 +153,7 @@ export default function TrackingTimeline({
       {/* Timeline */}
       <div className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
         <h2 className="mb-6 text-lg font-semibold text-zinc-950 dark:text-zinc-100">
-          {t("tracking.shipmentStatus")}
+          {t("tracking.escrowMilestones")}
         </h2>
         
         <div 
@@ -166,7 +164,7 @@ export default function TrackingTimeline({
         >
           <div 
             className={`flex transition-transform duration-300 ease-out md:block md:space-y-6 md:!transform-none ${
-              ["translate-x-0", "-translate-x-full", "-translate-x-[200%]", "-translate-x-[300%]", "-translate-x-[400%]"][swipeIndex] ??
+              ["translate-x-0", "-translate-x-full", "-translate-x-[200%]", "-translate-x-[300%]"][swipeIndex] ??
               "translate-x-0"
             }`}
           >
@@ -268,6 +266,8 @@ export default function TrackingTimeline({
           </div>
         </div>
       </div>
+
+      <TrackingSection escrowId={escrowId} />
 
       {/* Action Buttons */}
       {isShipped && (

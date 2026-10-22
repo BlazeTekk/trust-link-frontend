@@ -33,7 +33,7 @@ export default function DashboardClient() {
   const didStrip = useRef(false);
 
   useEffect(() => {
-    if (!window.localStorage.getItem(SESSION_KEY)) { router.push("/"); return; }
+    if (!window.localStorage.getItem(SESSION_KEY)) { router.push("/?reason=session_expired"); return; }
     const frame = window.requestAnimationFrame(() => setIsChecking(false));
     return () => window.cancelAnimationFrame(frame);
   }, [router]);

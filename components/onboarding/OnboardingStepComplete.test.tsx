@@ -10,7 +10,7 @@ describe("OnboardingStepComplete", () => {
 
     expect(screen.getByRole("heading", { name: "Onboarding Complete" })).toBeInTheDocument();
     expect(
-      screen.getByText(/Your vendor profile is saved and ready to use/)
+      screen.getByText(/Your vendor profile is saved in this browser and ready to use/)
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Go to Dashboard" })).toBeEnabled();
   });

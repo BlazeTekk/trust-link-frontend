@@ -58,9 +58,10 @@ export type {
 
 /**
  * BuyerContactInput — kept for backward-compatibility.
- * The canonical client uses an inline `{ email?: string; phone?: string }`.
+ * The canonical client uses an inline `{ email?: string; phone?: string; emailReceipt?: boolean }`.
  */
 export interface BuyerContactInput {
   email?: string;
   phone?: string;
+  emailReceipt?: boolean;
 }

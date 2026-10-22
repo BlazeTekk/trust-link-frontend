@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import FetchErrorState, {
   getFetchErrorMessage,
@@ -13,30 +13,21 @@ import EscrowLinkHeader from "./EscrowLinkHeader";
 import EscrowLinkQRCode from "./EscrowLinkQRCode";
 import EscrowLinkShareButtons from "./EscrowLinkShareButtons";
 
-/** Copy text to the system clipboard. Throws if the Clipboard API is unavailable. */
-async function copyToClipboard(text: string): Promise<void> {
-  if (!navigator.clipboard || !navigator.clipboard.writeText) {
-    throw new Error("Clipboard not supported");
-  }
-  await navigator.clipboard.writeText(text);
-}
-
-/** Fetch escrow link details from the API. Currently returns mock data. */
-async function fetchEscrowLink() {
-  await new Promise((resolve) => setTimeout(resolve, 150));
-  return {
-    title: "Escrow Agreement 1293",
-    status: "Active",
-    amount: 12450,
-    expires: "May 31, 2026",
-    escrowId: "1293",
-    url: "https://trustlink.example.com/pay/1293",
-    imageUrl: undefined,
-  };
+/** Caller-owned presentation data for a single shareable escrow. */
+export interface EscrowLinkData {
+  title: string;
+  status: string;
+  amount: number;
+  escrowId: string;
+  url: string;
+  imageUrl?: string;
 }
 
 /** Props for the EscrowLinkCard component. */
-interface EscrowLinkCardProps {
+export interface EscrowLinkCardProps {
+  link?: EscrowLinkData | null;
+  error?: Error | null;
+  onRetry?: () => void;
   /** When true, renders a skeleton loading placeholder instead of the card. */
   loading?: boolean;
   /** Callback invoked after a successful clipboard copy. */
@@ -45,79 +36,71 @@ interface EscrowLinkCardProps {
   onCopyError?: (err: Error) => void;
 }
 
-/**
- * Displays an escrow payment link card with QR code, share buttons,
- * and copy functionality. Fetches link details on mount and provides
- * sharing via WhatsApp, Instagram, Twitter/X, and native share API.
- */
+/** Displays caller-supplied escrow data; the caller owns fetching and retry. */
 export default function EscrowLinkCard({
+  link,
   loading = false,
+  error,
+  onRetry,
   onCopySuccess,
   onCopyError,
 }: EscrowLinkCardProps) {
+  if (loading) {
+    return (
+      <div
+        role="status"
+        aria-label="Loading escrow link"
+        className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
+      >
+        <Skeleton className="mb-4 h-6 w-2/3" />
+        <Skeleton className="mb-4 h-4 w-1/2" />
+        <Skeleton className="h-12 w-full rounded-3xl" />
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <FetchErrorState
+        title="We couldn't load your shareable link"
+        message={getFetchErrorMessage(error, "Failed to load escrow link details.")}
+        onRetry={onRetry}
+      />
+    );
+  }
+  if (!link) {
+    return (
+      <p role="status" className="rounded-3xl border p-6 text-sm">
+        Select an escrow to view its payment link.
+      </p>
+    );
+  }
+  return (
+    <LoadedEscrowLinkCard
+      key={`${link.escrowId}:${link.url}`}
+      link={link}
+      onCopySuccess={onCopySuccess}
+      onCopyError={onCopyError}
+    />
+  );
+}
+
+function LoadedEscrowLinkCard({
+  link,
+  onCopySuccess,
+  onCopyError,
+}: Pick<EscrowLinkCardProps, "onCopySuccess" | "onCopyError"> & { link: EscrowLinkData }) {
   const qrRef = useRef<HTMLDivElement>(null);
-  const [link, setLink] = useState<{
-    title: string;
-    status: string;
-    amount: number;
-    expires: string;
-    escrowId: string;
-    url: string;
-    imageUrl?: string;
-  } | null>(null);
-  const [error, setError] = useState<Error | null>(null);
+  const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
+    };
+  }, []);
   const [isCopying, setIsCopying] = useState(false);
   const [copyStatus, setCopyStatus] = useState<"idle" | "success" | "error">(
     "idle"
   );
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  const loadLink = useCallback(() => {
-    setError(null);
-    fetchEscrowLink().then(setLink).catch(setError);
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchEscrowLink()
-      .then((data) => {
-        if (!cancelled) setLink(data);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <Skeleton className="mb-4 h-6 w-2/3" />
-        <Skeleton className="mb-4 h-4 w-1/2" />
-        <div className="space-y-3">
-          <Skeleton className="h-12 w-full rounded-3xl" />
-          <Skeleton className="h-12 w-full rounded-3xl" />
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <FetchErrorState
-        title="We couldn't load your shareable link"
-        message={getFetchErrorMessage(
-          error,
-          "Failed to load escrow link details."
-        )}
-        onRetry={loadLink}
-      />
-    );
-  }
-
-  if (!link) return null;
 
   const handleNativeShare = async () => {
     if (!navigator.share || !link) return;
@@ -137,6 +120,7 @@ export default function EscrowLinkCard({
 
   const handleCopy = async () => {
     if (isCopying) return;
+    if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
     try {
       setIsCopying(true);
       setErrorMsg(null);
@@ -147,13 +131,13 @@ export default function EscrowLinkCard({
       setCopyStatus("success");
       onCopySuccess?.();
       track("link_copied", { method: "copy_button" });
-      setTimeout(() => setCopyStatus("idle"), 2000);
+      feedbackTimer.current = setTimeout(() => setCopyStatus("idle"), 2000);
     } catch (err: unknown) {
       setCopyStatus("error");
       const msg = err instanceof Error ? err.message : "Failed to copy";
       setErrorMsg(msg);
       onCopyError?.(err instanceof Error ? err : new Error(String(err)));
-      setTimeout(() => {
+      feedbackTimer.current = setTimeout(() => {
         setCopyStatus("idle");
         setErrorMsg(null);
       }, 2000);

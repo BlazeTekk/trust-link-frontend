@@ -38,6 +38,7 @@ export default function VendorOnboardingWizard() {
     wallet,
     state,
     errors,
+    saveError,
     buttonDisabled,
     updateField,
     goToStep,
@@ -103,7 +104,11 @@ export default function VendorOnboardingWizard() {
         />
 
         <div className="grid gap-10 lg:grid-cols-[1.2fr_0.8fr]">
-          <div>{stepContent()}</div>
+          <div>
+            {stepContent()}
+            {saveError && <p role="alert" className="mt-4 text-sm text-red-600 dark:text-red-400">{saveError}</p>}
+            <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">Shop details are saved only in this browser. Completing onboarding does not publish or update your public vendor profile.</p>
+          </div>
 
           <OnboardingChecklist
             steps={steps}

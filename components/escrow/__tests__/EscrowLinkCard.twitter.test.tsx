@@ -7,6 +7,14 @@ import EscrowLinkCard from "../EscrowLinkCard";
 import EscrowLinkShareButtons from "../EscrowLinkShareButtons";
 
 // Mock the QR canvas so jsdom doesn't try to draw to a real canvas.
+const sampleLink = {
+  title: "Escrow Agreement 1293",
+  status: "Active",
+  amount: 12450,
+  escrowId: "1293",
+  url: "https://trustlink.example.com/pay/1293",
+};
+
 vi.mock("qrcode.react", () => ({
   QRCodeSVG: () => <canvas data-testid="qr-code" />,
 }));
@@ -26,7 +34,7 @@ describe("EscrowLinkCard — Copy for Twitter/X (issue #64)", () => {
   });
 
   it("renders a Copy for Twitter/X button once the link loads", async () => {
-    render(<EscrowLinkCard />);
+    render(<EscrowLinkCard link={sampleLink} />);
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: /copy for twitter\/x/i })
@@ -35,7 +43,7 @@ describe("EscrowLinkCard — Copy for Twitter/X (issue #64)", () => {
   });
 
   it("copies pre-formatted tweet text including the link to the clipboard", async () => {
-    render(<EscrowLinkCard />);
+    render(<EscrowLinkCard link={sampleLink} />);
     const button = await screen.findByRole("button", {
       name: /copy for twitter\/x/i,
     });
@@ -53,7 +61,7 @@ describe("EscrowLinkCard — Copy for Twitter/X (issue #64)", () => {
   });
 
   it("shows a success toast after copying", async () => {
-    render(<EscrowLinkCard />);
+    render(<EscrowLinkCard link={sampleLink} />);
     const button = await screen.findByRole("button", {
       name: /copy for twitter\/x/i,
     });
@@ -83,6 +91,7 @@ describe("EscrowLinkCard — Copy for Twitter/X (issue #64)", () => {
         errorMsg={null}
         onCopy={vi.fn()}
         onNativeShare={vi.fn()}
+        qrRef={{ current: null }}
       />
     );
 

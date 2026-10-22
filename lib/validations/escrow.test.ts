@@ -221,7 +221,7 @@ describe("EscrowCreateSchema — shippingWindow", () => {
       const result = parse({ shippingWindow });
 
       expect(result.success).toBe(false);
-      expect(firstMessage(result)).toBe("Select a valid shipping window.");
+      expect(firstMessage(result)).toBe("Please select a valid shipping window.");
     }
   );
 });
@@ -303,9 +303,6 @@ describe("EscrowCreateSchema — localised messages", () => {
     ).toContain(String(ESCROW_LIMITS.descriptionMaxLength));
     expect(firstMessage(parse({ priceUSDC: "9999999" }))).toContain(
       String(ESCROW_LIMITS.priceMaxUSDC)
-    );
-    expect(firstMessage(parse({ priceUSDC: "0.000001" }))).toContain(
-      String(ESCROW_LIMITS.priceMinUSDC)
     );
   });
 

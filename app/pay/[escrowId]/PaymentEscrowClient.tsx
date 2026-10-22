@@ -6,13 +6,15 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import EscrowCountdown from "@/components/payment/EscrowCountdown";
+import { buildFundingTransactionXdr, submitTransaction } from "@/components/payment/PaymentForm";
 import { TrustBadge } from "@/components/payment/TrustBadge";
+import { useNetwork } from "@/components/providers/NetworkProvider";
 import TrackingTimelineSkeleton from "@/components/tracking/TrackingTimelineSkeleton";
 import useWallet from "@/hooks/useWallet";
 import { patchBuyerContact } from "@/lib/api";
 import { renderMarkdown } from "@/lib/markdown";
 import { isValidContractId } from "@/lib/stellar/contract";
-import { connectFreighter, isFreighterInstalled } from "@/lib/stellar/freighter";
+import { connectFreighter, isFreighterInstalled, signTransaction } from "@/lib/stellar/freighter";
 import { Escrow, EscrowStatusConst } from "@/types";
 import { formatUSDC } from "@/utils/currency";
 
@@ -56,15 +58,18 @@ function validateContact(t: (key: string) => string, email: string, phone: strin
 
 export function PaymentEscrowClient({ escrow, escrowId }: PaymentEscrowClientProps) {
   const { t } = useTranslation();
-  const { connect, isLoading } = useWallet();
+  const { connect, isLoading, publicKey } = useWallet();
+  const { config, network } = useNetwork();
   const [error, setError] = useState<string | null>(null);
   const [isPaying, setIsPaying] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
+  const [txHash, setTxHash] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [emailReceipt, setEmailReceipt] = useState(true);
   const [contactErrors, setContactErrors] = useState<ContactErrors>({});
   const [hasExpired, setHasExpired] = useState(false);
+  const [paymentStage, setPaymentStage] = useState<"idle" | "authenticating" | "submitting" | "settled">("idle");
 
   const amount = escrow.amount;
   const fee = useMemo(() => Number(((amount * PLATFORM_FEE_PERCENT) / 100).toFixed(2)), [amount]);
@@ -102,6 +107,7 @@ export function PaymentEscrowClient({ escrow, escrowId }: PaymentEscrowClientPro
 
     setError(null);
     setSuccess(null);
+    setTxHash(null);
 
     const errors = validateContact(t, email, phone);
     if (Object.keys(errors).length > 0) {
@@ -110,6 +116,7 @@ export function PaymentEscrowClient({ escrow, escrowId }: PaymentEscrowClientPro
     }
     setContactErrors({});
     setIsPaying(true);
+    setPaymentStage("authenticating");
 
     try {
       await patchBuyerContact(escrowId, {
@@ -126,11 +133,34 @@ export function PaymentEscrowClient({ escrow, escrowId }: PaymentEscrowClientPro
 
       await connectFreighter();
       const walletConnected = await connect();
-      if (!walletConnected) return;
-      setSuccess(t("payment.signatureCompleted"));
+      if (!walletConnected) {
+        setPaymentStage("idle");
+        return;
+      }
+
+      const sourceAccount = publicKey ?? (await connectFreighter());
+      if (!sourceAccount || !contractAddress) {
+        throw new Error(t("payment.contractUnavailable") || "Escrow contract is unavailable");
+      }
+
+      setPaymentStage("submitting");
+      const xdr = await buildFundingTransactionXdr({
+        escrowId,
+        escrowContractId: contractAddress,
+        sourceAccount,
+        network: network === "mainnet" ? "PUBLIC" : "TESTNET",
+      });
+      const signedXdr = await signTransaction(xdr, config.networkPassphrase);
+      const hash = await submitTransaction(signedXdr, config.rpcUrl, config.networkPassphrase);
+
+      setTxHash(hash);
+      setPaymentStage("settled");
+      setSuccess(`${t("payment.confirmationTitle") || "Payment successful"} — ${hash}`);
+      toast.success(t("payment.confirmationTitle") || "Payment successful");
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : t("payment.walletSignatureError");
       setError(message);
+      setPaymentStage("idle");
       toast.error(message);
     } finally {
       setIsPaying(false);
@@ -304,17 +334,26 @@ export function PaymentEscrowClient({ escrow, escrowId }: PaymentEscrowClientPro
       ) : null}
       {success ? (
         <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">
-          {success}
+          <p className="font-medium">{t("payment.confirmationTitle") || "Payment successful"}</p>
+          {txHash ? (
+            <p className="mt-1 break-all font-mono text-xs">
+              {txHash}
+            </p>
+          ) : null}
         </div>
       ) : null}
 
       <button
         type="button"
         onClick={handlePayNow}
-        disabled={isPaying || isLoading || !isPayable}
+        disabled={isPaying || isLoading || !isPayable || paymentStage !== "idle"}
         className="inline-flex w-full items-center justify-center rounded-lg bg-zinc-900 px-4 py-3 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
       >
-        {isPaying || isLoading ? t("payment.waitingForFreighter") : t("payment.payNow")}
+        {isPaying || isLoading ? (
+          paymentStage === "submitting" ? (t("payment.submitting") || "Submitting escrow funds...") : t("payment.waitingForFreighter")
+        ) : (
+          t("payment.payNow")
+        )}
       </button>
     </section>
   );

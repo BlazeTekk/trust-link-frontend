@@ -390,9 +390,35 @@ describe("VendorOnboardingWizard", () => {
       await screen.findByRole("heading", { name: "Onboarding Complete" })
     ).toBeInTheDocument();
     expect(mockPush).toHaveBeenCalledWith("/dashboard");
+    expect(JSON.parse(localStorage.getItem("vendor.profile") ?? "{}" )).toMatchObject({
+      businessName: "Stellar Craft Co.",
+      bio: VALID_DESCRIPTION,
+    });
     await waitFor(() => {
       expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
     });
+  });
+
+  it("retains the draft and stays on review if saving the local profile fails", async () => {
+    mockConnectedWallet();
+    await renderAtProfileStep();
+    fillValidProfile();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByRole("heading", { name: "Review Your Store" });
+    const setItem = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
+      throw new DOMException("full", "QuotaExceededError");
+    });
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "Complete Onboarding" }));
+      expect(screen.getByRole("alert")).toHaveTextContent(/Couldn't save your profile in this browser/);
+      expect(mockPush).not.toHaveBeenCalled();
+      expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull();
+      setItem.mockRestore();
+      fireEvent.click(screen.getByRole("button", { name: "Complete Onboarding" }));
+      expect(mockPush).toHaveBeenCalledWith("/dashboard");
+    } finally {
+      setItem.mockRestore();
+    }
   });
 
   it("does not complete when the wallet disconnects on the review step", async () => {

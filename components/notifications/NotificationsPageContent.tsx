@@ -6,6 +6,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useNotifications } from "@/components/providers/NotificationProvider";
 import { Skeleton } from "@/components/ui/Skeleton";
 
+import { NotificationFetchFeedback } from "./NotificationFetchFeedback";
 import { NotificationRow } from "./NotificationRow";
 import {
   NotificationsEmptyState,
@@ -24,7 +25,7 @@ const NOTIFICATIONS_PER_PAGE = 20;
 function NotificationsContent() {
   const router = useRouter();
   const [isChecking, setIsChecking] = useState(true);
-  const { notifications, unreadCount, markAsRead, markAllAsRead, isLoading } =
+  const { notifications, unreadCount, markAsRead, markAllAsRead, isLoading, error, hasLoaded, refetch } =
     useNotifications();
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
@@ -87,10 +88,11 @@ function NotificationsContent() {
           onBack={() => router.back()}
           onMarkAllAsRead={markAllAsRead}
         />
-        {isLoading && notifications.length === 0 ? (
+        <NotificationFetchFeedback error={error} isLoading={isLoading} hasLoaded={hasLoaded} refetch={refetch} />
+        {isLoading && !error && notifications.length === 0 ? (
           <NotificationsSkeleton />
         ) : notifications.length === 0 ? (
-          <NotificationsEmptyState />
+          error ? null : <NotificationsEmptyState />
         ) : (
           <>
             <NotificationsSearch value={searchQuery} onChange={handleSearchChange} />

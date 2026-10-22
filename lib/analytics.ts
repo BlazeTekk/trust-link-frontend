@@ -28,7 +28,18 @@ type EventName =
   | "link_copied"
   | "qr_code_downloaded";
 
-let posthogInstance: typeof import("posthog-js").default | null = null;
+interface PostHogClient {
+  init: (key: string, options?: Record<string, unknown>) => void;
+  capture: (
+    event: string,
+    properties?: Record<string, string | number | boolean>
+  ) => void;
+  identify: (distinctId: string) => void;
+  reset: () => void;
+  opt_out_capturing: () => void;
+}
+
+let posthogInstance: PostHogClient | null = null;
 let initialized = false;
 
 function isDisabled(): boolean {
@@ -38,10 +49,11 @@ function isDisabled(): boolean {
   return false;
 }
 
-async function getPosthog() {
+async function getPosthog(): Promise<PostHogClient> {
   if (posthogInstance) return posthogInstance;
 
-  const posthog = (await import("posthog-js")).default;
+  const posthogModule = await import("posthog-js");
+  const posthog = (posthogModule.default ?? posthogModule) as PostHogClient;
   posthogInstance = posthog;
   return posthog;
 }
@@ -59,7 +71,7 @@ async function ensureInitialized() {
     respect_dnt: true,
     // Disable session recording for privacy
     disable_session_recording: true,
-    loaded: (ph) => {
+    loaded: (ph: PostHogClient) => {
       // In development, opt out by default
       if (process.env.NODE_ENV === "development") {
         ph.opt_out_capturing();

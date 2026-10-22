@@ -25,7 +25,7 @@ export default function OnboardingStepComplete({
       </div>
       <h2 className="text-3xl font-semibold text-zinc-950 dark:text-white">Onboarding Complete</h2>
       <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
-        Your vendor profile is saved and ready to use. You can now manage escrows and ship orders from your dashboard.
+        Your vendor profile is saved in this browser and ready to use. These local details do not update your public vendor profile. You can now manage escrows and ship orders from your dashboard.
       </p>
       <button
         type="button"

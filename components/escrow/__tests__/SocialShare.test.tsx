@@ -28,6 +28,7 @@ function renderButtons() {
       errorMsg={null}
       onCopy={vi.fn()}
       onNativeShare={vi.fn()}
+      qrRef={{ current: null }}
     />
   );
 }

@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { VendorNotificationPreferences } from "@/lib/api";
-import { getVendorNotificationPreferences } from "@/lib/api";
+import { getVendorNotificationPreferences, patchVendorNotifications } from "@/lib/api";
 
 import NotificationSettingsPage from "./NotificationsClient";
 
@@ -78,7 +78,7 @@ describe("NotificationSettingsPage preference loading", () => {
     expect(getPrefs).toHaveBeenLastCalledWith("token-a");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(fundedEmail()).toHaveAttribute("aria-checked", "true");
-    expect(saveButton()).toBeEnabled();
+    expect(saveButton()).toBeDisabled();
   });
 
   it("clears a prior error as soon as a new load starts", async () => {
@@ -92,7 +92,7 @@ describe("NotificationSettingsPage preference loading", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 
     await act(async () => retry.resolve(prefs(false)));
-    expect(saveButton()).toBeEnabled();
+    expect(saveButton()).toBeDisabled();
   });
 
   it("ignores a late response for an obsolete token", async () => {
@@ -115,7 +115,7 @@ describe("NotificationSettingsPage preference loading", () => {
     // The superseded token-a response arrives last and must not win.
     await act(async () => forA.resolve(prefs(true)));
     expect(fundedEmail()).toHaveAttribute("aria-checked", "false");
-    expect(saveButton()).toBeEnabled();
+    expect(saveButton()).toBeDisabled();
   });
 
   it("ignores a late failure for an obsolete token", async () => {
@@ -155,7 +155,7 @@ describe("NotificationSettingsPage preference loading", () => {
     expect(saveButton()).toBeDisabled();
   });
 
-  it("loads preferences after connecting and enables saving only after retrieval", async () => {
+  it("loads preferences after connecting and keeps unchanged preferences unsaveable", async () => {
     wallet.token = null;
     const pending = deferred<VendorNotificationPreferences>();
     getPrefs.mockReturnValue(pending.promise);
@@ -171,6 +171,69 @@ describe("NotificationSettingsPage preference loading", () => {
 
     await act(async () => pending.resolve(prefs(true)));
     expect(fundedEmail()).toHaveAttribute("aria-checked", "true");
+    expect(saveButton()).toBeDisabled();
+  });
+});
+
+describe("NotificationSettingsPage unsaved changes", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    wallet.token = "token-a";
+    getPrefs.mockResolvedValue(prefs(false));
+  });
+
+  it("discards edits and disables redundant saves", async () => {
+    render(<NotificationSettingsPage />);
+    await screen.findByRole("switch", { name: "Funded email" });
+    expect(saveButton()).toBeDisabled();
+    fireEvent.click(fundedEmail());
     expect(saveButton()).toBeEnabled();
+    expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
+    expect(fundedEmail()).toHaveAttribute("aria-checked", "false");
+    expect(saveButton()).toBeDisabled();
+  });
+
+  it("keeps edits made during a save dirty and discards to the submitted snapshot", async () => {
+    const pending = deferred<void>();
+    vi.mocked(patchVendorNotifications).mockReturnValueOnce(pending.promise);
+    render(<NotificationSettingsPage />);
+    await screen.findByRole("switch", { name: "Funded email" });
+    fireEvent.click(fundedEmail());
+    fireEvent.click(saveButton());
+    expect(patchVendorNotifications).toHaveBeenCalledWith(prefs(true), "token-a");
+    fireEvent.click(fundedEmail());
+    await act(async () => pending.resolve());
+    expect(fundedEmail()).toHaveAttribute("aria-checked", "false");
+    expect(saveButton()).toBeEnabled();
+    expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
+    expect(fundedEmail()).toHaveAttribute("aria-checked", "true");
+    expect(saveButton()).toBeDisabled();
+  });
+
+  it("preserves unsaved edits when saving fails", async () => {
+    vi.mocked(patchVendorNotifications).mockRejectedValueOnce(new Error("network"));
+    render(<NotificationSettingsPage />);
+    await screen.findByRole("switch", { name: "Funded email" });
+    fireEvent.click(fundedEmail());
+    await act(async () => fireEvent.click(saveButton()));
+    expect(saveButton()).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
+    expect(fundedEmail()).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("ignores save completion after switching wallets", async () => {
+    const pending = deferred<void>();
+    vi.mocked(patchVendorNotifications).mockReturnValueOnce(pending.promise);
+    const { rerender } = render(<NotificationSettingsPage />);
+    await screen.findByRole("switch", { name: "Funded email" });
+    fireEvent.click(fundedEmail());
+    fireEvent.click(saveButton());
+    wallet.token = "token-b";
+    await act(async () => rerender(<NotificationSettingsPage />));
+    await act(async () => pending.resolve());
+    expect(fundedEmail()).toHaveAttribute("aria-checked", "false");
+    expect(saveButton()).toBeDisabled();
   });
 });
