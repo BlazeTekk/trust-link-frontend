@@ -13,6 +13,10 @@ export default function ProfileClient() {
   const { plan, isPro, isLoading: planLoading } = useSubscription();
 
   const [profile, setProfile] = useState(EMPTY_LOCAL_PROFILE);
+  const [copyStatus, setCopyStatus] = useState<"success" | "error" | null>(null);
+
+  const publicProfileUrl = publicKey ? new URL(`/vendor/${publicKey}`, window.location.origin).toString() : null;
+
   useEffect(() => {
     try {
       const restored = readLocalProfile();
@@ -21,6 +25,25 @@ export default function ProfileClient() {
       // Browser-local details are optional when site storage is unavailable.
     }
   }, []);
+
+  const handleCopyPublicProfile = async () => {
+    if (!publicKey || !publicProfileUrl) {
+      return;
+    }
+
+    try {
+      if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") {
+        throw new Error("Clipboard unavailable");
+      }
+
+      await navigator.clipboard.writeText(publicProfileUrl);
+      setCopyStatus("success");
+      window.setTimeout(() => setCopyStatus(null), 2000);
+    } catch {
+      setCopyStatus("error");
+      window.setTimeout(() => setCopyStatus(null), 2000);
+    }
+  };
 
   return (
     <main className="min-h-screen bg-zinc-50 p-6 dark:bg-black">
@@ -56,6 +79,36 @@ export default function ProfileClient() {
                   {publicKey}
                 </p>
               </div>
+
+              {publicProfileUrl && (
+                <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Public vendor profile</p>
+                    <Link
+                      href={`/vendor/${publicKey}`}
+                      className="inline-flex items-center rounded-full bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-700 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200"
+                    >
+                      View
+                    </Link>
+                  </div>
+                  <p className="mt-2 break-all font-mono text-xs text-zinc-600 dark:text-zinc-400">{publicProfileUrl}</p>
+                  <div className="mt-3 flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={handleCopyPublicProfile}
+                      className="rounded-2xl border border-blue-600 bg-transparent px-4 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50 dark:border-blue-500 dark:text-blue-400 dark:hover:bg-blue-950/40"
+                    >
+                      {copyStatus === "success" ? "Copied!" : "Copy profile link"}
+                    </button>
+                  </div>
+                  {copyStatus === "error" && (
+                    <p role="status" aria-live="polite" className="mt-2 text-sm text-red-600 dark:text-red-400">
+                      Clipboard access was unavailable.
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div className="flex flex-wrap gap-3">
                 <Link
                   href="/settings/profile"
