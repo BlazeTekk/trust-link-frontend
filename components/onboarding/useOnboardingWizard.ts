@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 
 import useWallet from "@/hooks/useWallet";
+import { saveOnboardingProfile } from "@/lib/local-profile";
 
 export type OnboardingStep = 0 | 1 | 2;
 
@@ -103,6 +104,7 @@ export function useOnboardingWizard() {
   const wallet = useWallet();
   const [state, setState] = useState<VendorOnboardingState>(defaultState);
   const [hydrated, setHydrated] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [errors, setErrors] = useState<ValidationErrors>({});
   // Set synchronously on completion so a repeated activation before the next
   // render cannot complete onboarding twice.
@@ -227,6 +229,17 @@ export function useOnboardingWizard() {
       return;
     }
 
+    try {
+      saveOnboardingProfile({
+        ...state,
+        website: normalizeAndValidateUrl(state.website) ?? "",
+      });
+      setSaveError(null);
+    } catch {
+      setSaveError("Couldn't save your profile in this browser. Your draft is still here. Allow site storage or free up space, then try Finish again.");
+      return;
+    }
+
     completedRef.current = true;
     setState((current) => ({ ...current, completed: true }));
     router.push("/dashboard");
@@ -240,6 +253,7 @@ export function useOnboardingWizard() {
     wallet,
     state,
     errors,
+    saveError,
     isProfileValid,
     buttonDisabled,
     updateField,

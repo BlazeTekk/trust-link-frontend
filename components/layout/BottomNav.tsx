@@ -1,30 +1,11 @@
 "use client";
 
-import { Bell, LayoutDashboard, MapPin, PlusCircle, User } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ComponentType, ReactElement, SVGProps } from "react";
+import type { ReactElement } from "react";
 
 import { useNotifications } from "@/components/providers/NotificationProvider";
-
-/** A single entry in the mobile bottom navigation bar. */
-interface NavItem {
-  /** Route the link points to, also used to derive the active state. */
-  href: string;
-  /** Visible label and accessible name base for the link. */
-  label: string;
-  /** Icon component rendered before the label. */
-  icon: ComponentType<SVGProps<SVGSVGElement>>;
-}
-
-/** Fixed list of destinations shown in {@link BottomNav}. */
-const STATIC_NAV: readonly NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/create", label: "Create Link", icon: PlusCircle },
-  { href: "/tracking", label: "Track Order", icon: MapPin },
-  { href: "/notifications", label: "Inbox", icon: Bell },
-  { href: "/profile", label: "Profile", icon: User },
-] as const;
+import { CORE_NAV, isNavigationActive } from "@/lib/navigation";
 
 /**
  * Fixed, mobile-only bottom navigation bar (`md:hidden`).
@@ -43,8 +24,8 @@ export default function BottomNav(): ReactElement {
       role="navigation"
       aria-label="Mobile navigation"
     >
-      {STATIC_NAV.map(({ href, label, icon: Icon }) => {
-        const isActive = pathname === href || pathname.startsWith(`${href}/`);
+      {CORE_NAV.map(({ href, label, icon: Icon }) => {
+        const isActive = isNavigationActive(pathname, href);
         const isBell = href === "/notifications";
         return (
           <Link

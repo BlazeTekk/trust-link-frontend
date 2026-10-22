@@ -24,6 +24,9 @@ interface NotificationContextType {
   markAsRead: (id: string) => void;
   markAllAsRead: () => void;
   isLoading: boolean;
+  error: Error | null;
+  hasLoaded: boolean;
+  refetch: () => Promise<void>;
 }
 
 const NotificationContext = createContext<NotificationContextType | undefined>(
@@ -39,33 +42,50 @@ export function NotificationProvider({
 }) {
   const [raw, setRaw] = useState<Omit<AppNotification, "read">[]>([]);
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
-  const [isLoading, setIsLoading] = useState(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const generationRef = useRef(0);
+  const activeRef = useRef(false);
+  const fetchingRef = useRef(false);
 
   const fetchNotifications = useCallback(async () => {
-    const token =
-      typeof window !== "undefined"
-        ? (localStorage.getItem("wallet.jwt") ?? undefined)
-        : undefined;
-    if (!token) return;
+    if (!activeRef.current || fetchingRef.current) return;
+    const generation = generationRef.current;
+    fetchingRef.current = true;
+    setIsLoading(true);
     try {
+      const token = localStorage.getItem("wallet.jwt");
+      if (!token) return;
       const escrows = await getVendorEscrows(token);
+      if (!activeRef.current || generation !== generationRef.current) return;
       setRaw(deriveNotifications(escrows));
-    } catch {
-      // silently ignore — stale data is fine
+      setHasLoaded(true);
+      setError(null);
+    } catch (err) {
+      if (activeRef.current && generation === generationRef.current) {
+        setError(err instanceof Error ? err : new Error("Unable to load notifications."));
+      }
+    } finally {
+      if (activeRef.current && generation === generationRef.current) {
+        fetchingRef.current = false;
+        setIsLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
+    activeRef.current = true;
     startTransition(() => {
       setReadIds(getReadIds());
-      setIsLoading(true);
-      void fetchNotifications().finally(() => startTransition(() => setIsLoading(false)));
+      void fetchNotifications();
     });
-
-    intervalRef.current = setInterval(fetchNotifications, POLL_MS);
+    const interval = setInterval(() => void fetchNotifications(), POLL_MS);
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      clearInterval(interval);
+      activeRef.current = false;
+      generationRef.current += 1;
+      fetchingRef.current = false;
     };
   }, [fetchNotifications]);
 
@@ -99,7 +119,7 @@ export function NotificationProvider({
 
   return (
     <NotificationContext.Provider
-      value={{ notifications, unreadCount, markAsRead, markAllAsRead, isLoading }}
+      value={{ notifications, unreadCount, markAsRead, markAllAsRead, isLoading, error, hasLoaded, refetch: fetchNotifications }}
     >
       {children}
     </NotificationContext.Provider>

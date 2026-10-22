@@ -40,7 +40,7 @@ describe("ProfileSettingsClient storage failures", () => {
 
     expect(setItem).toHaveBeenCalled();
     expect(screen.getByRole("alert")).toHaveTextContent(message);
-    expect(screen.queryByText("Profile saved.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Profile saved in this browser.")).not.toBeInTheDocument();
     expect(screen.getByLabelText(/Business Name/)).toHaveValue("Acme Goods");
     expect(screen.getByRole("button", { name: "Save Changes" })).toBeEnabled();
   });
@@ -60,7 +60,7 @@ describe("ProfileSettingsClient storage failures", () => {
 
     expect(setItem).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByText("Profile saved.")).toBeInTheDocument();
+    expect(screen.getByText("Profile saved in this browser.")).toBeInTheDocument();
     expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}")).toMatchObject({
       businessName: "Acme Goods",
     });

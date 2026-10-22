@@ -14,7 +14,7 @@ const {
   mockNotifications: [] as AppNotification[],
   mockMarkAsRead: vi.fn(),
   mockMarkAllAsRead: vi.fn(),
-  mockState: { isLoading: false },
+  mockState: { isLoading: false, error: null as Error | null, hasLoaded: false, refetch: vi.fn().mockResolvedValue(undefined) },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -34,7 +34,7 @@ vi.mock("@/components/providers/NotificationProvider", () => ({
     unreadCount: mockNotifications.filter((n) => !n.read).length,
     markAsRead: mockMarkAsRead,
     markAllAsRead: mockMarkAllAsRead,
-    isLoading: mockState.isLoading,
+    ...mockState,
   }),
 }));
 
@@ -59,7 +59,29 @@ describe("NotificationsPageContent", () => {
     vi.clearAllMocks();
     mockNotifications.length = 0;
     mockState.isLoading = false;
+    mockState.error = null;
+    mockState.hasLoaded = false;
     window.localStorage.clear();
+  });
+
+  it("distinguishes an initial failure from an empty inbox and offers retry", async () => {
+    window.localStorage.setItem("wallet.jwt", "valid-token");
+    mockState.error = new Error("Offline");
+    render(<NotificationsPageContent />);
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    expect(screen.getByText(/Couldn't load notifications/)).toBeInTheDocument();
+    fireEvent.click(retry);
+    expect(mockState.refetch).toHaveBeenCalledOnce();
+  });
+
+  it("shows stale notifications alongside refresh failure feedback", async () => {
+    window.localStorage.setItem("wallet.jwt", "valid-token");
+    mockNotifications.push(makeNotification("saved"));
+    mockState.error = new Error("Offline");
+    mockState.hasLoaded = true;
+    render(<NotificationsPageContent />);
+    expect(await screen.findByText(/Showing the last successfully loaded feed/)).toBeInTheDocument();
+    expect(screen.getByText(/Item saved/)).toBeInTheDocument();
   });
 
   it("renders skeleton while checking JWT", () => {
@@ -200,7 +222,7 @@ describe("NotificationsPageContent", () => {
     mockState.isLoading = true;
     render(<NotificationsPageContent />);
     await waitFor(() => {
-      expect(screen.getByRole("status")).toBeInTheDocument();
+      expect(screen.getByRole("status", { name: "Loading notifications" })).toBeInTheDocument();
     });
   });
 
