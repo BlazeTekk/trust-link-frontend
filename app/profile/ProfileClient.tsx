@@ -2,19 +2,52 @@
 
 import { Sparkles } from "lucide-react";
 import Link from "next/link";
+import { startTransition, useEffect, useState } from "react";
 
 import { useSubscription } from "@/components/providers/SubscriptionProvider";
 import useWallet from "@/hooks/useWallet";
+import { EMPTY_LOCAL_PROFILE, readLocalProfile } from "@/lib/local-profile";
 
 export default function ProfileClient() {
   const { publicKey, disconnect } = useWallet();
   const { plan, isPro, isLoading: planLoading } = useSubscription();
+
+  const [profile, setProfile] = useState(EMPTY_LOCAL_PROFILE);
+  useEffect(() => {
+    try {
+      const restored = readLocalProfile();
+      startTransition(() => setProfile(restored));
+    } catch {
+      // Browser-local details are optional when site storage is unavailable.
+    }
+  }, []);
 
   return (
     <main className="min-h-screen bg-zinc-50 p-6 dark:bg-black">
       <div className="mx-auto max-w-4xl">
         <h1 className="mb-6 text-3xl font-semibold text-zinc-950 dark:text-white">Profile</h1>
         <div className="rounded-3xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+          <section aria-label="Browser-local profile" className="mb-6 space-y-3">
+            <h2 className="text-lg font-semibold text-zinc-950 dark:text-white">Local shop details</h2>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">Saved only in this browser. These details do not update your public vendor profile.</p>
+            <dl className="space-y-3">
+              {([
+                ["Business Name", profile.businessName],
+                ["Display Name", profile.displayName],
+                ["Contact Email", profile.email],
+                ["Short Bio", profile.bio],
+                ["Website", profile.website],
+                ["Shipping Locations", profile.shippingLocations],
+              ] as const).filter(([, value]) => value.trim()).map(([label, value]) => (
+                <div key={label}>
+                  <dt className="text-sm text-zinc-500 dark:text-zinc-400">{label}</dt>
+                  <dd className="whitespace-pre-wrap break-words text-sm text-zinc-950 dark:text-zinc-100">{value}</dd>
+                </div>
+              ))}
+            </dl>
+            {!profile.businessName && <p className="text-sm text-zinc-500">Complete onboarding or edit your settings to save shop details.</p>}
+            <Link href="/settings/profile" className="inline-block rounded text-sm font-semibold text-blue-600 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-400">Edit local shop details</Link>
+          </section>
           {publicKey ? (
             <div className="space-y-6">
               <div>

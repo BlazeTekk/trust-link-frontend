@@ -5,7 +5,8 @@ import type { AppNotification } from "@/types";
 
 import NotificationBell from "./NotificationBell";
 
-const { mockNotifications, mockMarkAsRead, mockMarkAllAsRead } = vi.hoisted(() => ({
+const { mockNotifications, mockMarkAsRead, mockMarkAllAsRead, mockState } = vi.hoisted(() => ({
+  mockState: { isLoading: false, error: null as Error | null, hasLoaded: false, refetch: vi.fn().mockResolvedValue(undefined) },
   mockNotifications: [] as AppNotification[],
   mockMarkAsRead: vi.fn(),
   mockMarkAllAsRead: vi.fn(),
@@ -17,7 +18,7 @@ vi.mock("@/components/providers/NotificationProvider", () => ({
     unreadCount: mockNotifications.filter((n) => !n.read).length,
     markAsRead: mockMarkAsRead,
     markAllAsRead: mockMarkAllAsRead,
-    isLoading: false,
+    ...mockState,
   }),
 }));
 
@@ -37,6 +38,29 @@ describe("NotificationBell", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockNotifications.length = 0;
+    mockState.error = null;
+    mockState.isLoading = false;
+    mockState.hasLoaded = false;
+  });
+
+  it("distinguishes an initial failure from an empty preview and offers retry", () => {
+    mockState.error = new Error("Offline");
+    render(<NotificationBell />);
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
+    expect(screen.getByText(/Couldn't load notifications/)).toBeInTheDocument();
+    expect(screen.queryByText("No notifications yet")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(mockState.refetch).toHaveBeenCalledOnce();
+  });
+
+  it("keeps stale preview entries visible during a failed refresh", () => {
+    mockNotifications.push(makeNotification("saved", 0));
+    mockState.error = new Error("Offline");
+    mockState.hasLoaded = true;
+    render(<NotificationBell />);
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
+    expect(screen.getByText(/Showing the last successfully loaded feed/)).toBeInTheDocument();
+    expect(screen.getByText("Message 0")).toBeInTheDocument();
   });
 
   it("renders the preview list without React duplicate-key warnings when ids repeat", () => {

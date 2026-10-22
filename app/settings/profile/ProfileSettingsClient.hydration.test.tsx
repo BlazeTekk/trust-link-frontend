@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { saveOnboardingProfile } from "@/lib/local-profile";
+
 import ProfileSettingsClient from "./ProfileSettingsClient";
 
 vi.mock("@/hooks/useWallet", () => ({
@@ -29,6 +31,21 @@ describe("ProfileSettingsClient stored profile hydration", () => {
     vi.restoreAllMocks();
   });
 
+  it("restores completed onboarding details and keeps settings edits after remount", async () => {
+    saveOnboardingProfile({ shopName: "Craft shop", description: "Handmade furniture", website: "https://shop.example/", shippingLocations: "Lagos" });
+    const { unmount } = render(<ProfileSettingsClient />);
+    await waitFor(() => expect(field(/Business Name/)).toHaveValue("Craft shop"));
+    expect(field(/Short Bio/)).toHaveValue("Handmade furniture");
+    expect(field(/Website/)).toHaveValue("https://shop.example/");
+    expect(field(/Shipping Locations/)).toHaveValue("Lagos");
+    fireEvent.change(field(/Shipping Locations/), { target: { value: "Abuja" } });
+    save();
+    unmount();
+    render(<ProfileSettingsClient />);
+    await waitFor(() => expect(field(/Shipping Locations/)).toHaveValue("Abuja"));
+    expect(screen.getByText(/Saving does not update your public vendor profile/)).toBeInTheDocument();
+  });
+
   it("hydrates a partial profile with defaults for omitted fields", async () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ businessName: "Acme" }));
     render(<ProfileSettingsClient />);
@@ -40,7 +57,7 @@ describe("ProfileSettingsClient stored profile hydration", () => {
 
     fireEvent.change(field(/Display Name/), { target: { value: "@acme" } });
     save();
-    expect(screen.getByText("Profile saved.")).toBeInTheDocument();
+    expect(screen.getByText("Profile saved in this browser.")).toBeInTheDocument();
   });
 
   it.each([
@@ -80,12 +97,14 @@ describe("ProfileSettingsClient stored profile hydration", () => {
 
     fireEvent.change(field(/Business Name/), { target: { value: "Acme" } });
     save();
-    expect(screen.getByText("Profile saved.")).toBeInTheDocument();
+    expect(screen.getByText("Profile saved in this browser.")).toBeInTheDocument();
     expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!)).toEqual({
       businessName: "Acme",
       displayName: "",
       email: "",
       bio: "Hello",
+      website: "",
+      shippingLocations: "",
     });
   });
 });

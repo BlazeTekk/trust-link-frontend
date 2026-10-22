@@ -10,6 +10,8 @@ import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { relativeTime, statusLabel } from "@/lib/notifications";
 import type { AppNotification, EscrowStatus } from "@/types";
 
+import { NotificationFetchFeedback } from "./NotificationFetchFeedback";
+
 /** Renders an icon that visually represents the given escrow status. */
 function StatusIcon({ type }: { type: EscrowStatus }) {
   const cls = "h-4 w-4 shrink-0";
@@ -45,7 +47,7 @@ const STATUS_COLORS: Record<EscrowStatus, string> = {
  * (mark-as-read, mark-all-read, view all).
  */
 export default function NotificationBell() {
-  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
+  const { notifications, unreadCount, markAsRead, markAllAsRead, isLoading, error, hasLoaded, refetch } = useNotifications();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const preview = notifications.slice(0, 5);
@@ -115,12 +117,16 @@ export default function NotificationBell() {
             )}
           </div>
 
+          <NotificationFetchFeedback error={error} isLoading={isLoading} hasLoaded={hasLoaded} refetch={refetch} />
+
           {/* List */}
           <ul className="max-h-72 overflow-y-auto">
             {preview.length === 0 ? (
-              <li className="px-4 py-8 text-center text-sm text-zinc-400 dark:text-zinc-500">
-                No notifications yet
-              </li>
+              !error && !isLoading && (
+                <li className="px-4 py-8 text-center text-sm text-zinc-400 dark:text-zinc-500">
+                  No notifications yet
+                </li>
+              )
             ) : (
               preview.map((n: AppNotification, index: number) => (
                 // `n.id` (the escrow history event id) is expected to be unique,
