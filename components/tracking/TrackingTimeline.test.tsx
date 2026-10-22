@@ -17,6 +17,10 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
+vi.mock("@/components/tracking/TrackingSection", () => ({
+  default: ({ escrowId }: { escrowId: string }) => <div data-testid="carrier-tracking">{escrowId}</div>,
+}));
+
 vi.mock("@/hooks/useEscrow", () => ({
   useEscrow: vi.fn(),
 }));
@@ -64,7 +68,7 @@ describe("TrackingTimeline", () => {
     expect(skeletons.length).toBeGreaterThan(0);
   });
 
-  it("renders all 5 tracking stages", async () => {
+  it("renders the four escrow milestones separately from carrier tracking", async () => {
     await act(async () => {
       render(
         <TrackingTimeline escrowId="esc_123" initialEscrow={mockEscrow} />
@@ -74,8 +78,9 @@ describe("TrackingTimeline", () => {
     expect(screen.getByText("tracking.orderPlaced")).toBeInTheDocument();
     expect(screen.getByText("tracking.paymentConfirmed")).toBeInTheDocument();
     expect(screen.getByText("tracking.shipped")).toBeInTheDocument();
-    expect(screen.getByText("tracking.outForDelivery")).toBeInTheDocument();
-    expect(screen.getByText("tracking.delivered")).toBeInTheDocument();
+    expect(screen.queryByText("tracking.outForDelivery")).not.toBeInTheDocument();
+    expect(screen.getByTestId("carrier-tracking")).toHaveTextContent("esc_123");
+    expect(screen.getByText("tracking.escrowCompleted")).toBeInTheDocument();
   });
 
   it("shows a readable fallback for an invalid update timestamp", async () => {
@@ -174,7 +179,7 @@ describe("TrackingTimeline", () => {
     });
 
     // Use the translation key as the mock returns the key itself
-    expect(screen.getByText("tracking.delivered")).toBeInTheDocument();
+    expect(screen.getByText("tracking.escrowCompleted")).toBeInTheDocument();
   });
 
   it("makes timeline steps focusable with tabIndex", async () => {
@@ -215,7 +220,7 @@ describe("TrackingTimeline", () => {
     const nonActiveSteps = steps.filter(
       (s) => s.getAttribute("aria-current") !== "step"
     );
-    expect(nonActiveSteps.length).toBe(4);
+    expect(nonActiveSteps.length).toBe(3);
   });
 
   it("shows a user-friendly error state when fetching fails", async () => {

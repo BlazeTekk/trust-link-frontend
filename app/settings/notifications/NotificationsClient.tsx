@@ -34,6 +34,7 @@ const DEFAULT_PREFS: VendorNotificationPreferences = {
 export default function NotificationSettingsPage() {
   const { token, connect } = useWallet();
   const [prefs, setPrefs] = useState<VendorNotificationPreferences>(DEFAULT_PREFS);
+  const [savedPrefs, setSavedPrefs] = useState<VendorNotificationPreferences>(DEFAULT_PREFS);
   const [loadedToken, setLoadedToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -43,16 +44,25 @@ export default function NotificationSettingsPage() {
   // Identifies the latest load; responses from older (superseded or
   // cancelled) loads are ignored so they cannot overwrite current state.
   const latestLoadRef = useRef(0);
+  const savingLoadRef = useRef<number | null>(null);
+
+  const isDirty = EVENTS.some(({ key }) =>
+    prefs[key].email !== savedPrefs[key].email || prefs[key].sms !== savedPrefs[key].sms,
+  );
+  const canEdit = !!token && loadedToken === token && !isLoading && !loadError;
 
   const loadPreferences = useCallback(async (authToken: string) => {
     const loadId = ++latestLoadRef.current;
     setIsLoading(true);
     setLoadError(null);
     setLoadedToken(null);
+    setIsSaving(false);
+    savingLoadRef.current = null;
     try {
       const next = await getVendorNotificationPreferences(authToken);
       if (loadId === latestLoadRef.current) {
         setPrefs(next);
+        setSavedPrefs(next);
         setLoadedToken(authToken);
       }
     } catch {
@@ -89,14 +99,26 @@ export default function NotificationSettingsPage() {
       toast.error("Connect your wallet to save preferences.");
       return;
     }
+    if (!canEdit || !isDirty || savingLoadRef.current !== null) return;
+    // Toggles replace objects rather than mutate them, so this is the exact
+    // snapshot sent even if the user keeps editing while the request is pending.
+    const submittedPrefs = prefs;
+    const loadId = latestLoadRef.current;
+    savingLoadRef.current = loadId;
     setIsSaving(true);
     try {
-      await patchVendorNotifications(prefs, token);
+      await patchVendorNotifications(submittedPrefs, token);
+      if (loadId !== latestLoadRef.current) return;
+      setSavedPrefs(submittedPrefs);
       toast.success("Notification preferences saved.");
     } catch {
+      if (loadId !== latestLoadRef.current) return;
       toast.error("Failed to save preferences. Please try again.");
     } finally {
-      setIsSaving(false);
+      if (loadId === latestLoadRef.current) {
+        savingLoadRef.current = null;
+        setIsSaving(false);
+      }
     }
   }
 
@@ -224,13 +246,27 @@ export default function NotificationSettingsPage() {
 
         {/* Save button */}
         <div className="border-t border-zinc-100 px-6 py-4 dark:border-zinc-800">
-          <button
-            onClick={handleSave}
-            disabled={!token || loadedToken !== token || isSaving || isLoading || !!loadError}
-            className="rounded-2xl bg-zinc-900 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-          >
-            {isSaving ? "Saving…" : "Save preferences"}
-          </button>
+          <p role="status" className="mb-3 text-sm text-zinc-600 dark:text-zinc-400">
+            {canEdit ? (isDirty ? "Unsaved changes" : isSaving ? "Saving preferences…" : "All changes saved") : ""}
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={!canEdit || !isDirty || isSaving}
+              className="rounded-2xl bg-zinc-900 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+            >
+              {isSaving ? "Saving…" : "Save preferences"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPrefs(savedPrefs)}
+              disabled={!canEdit || !isDirty || isSaving}
+              className="rounded-2xl border border-zinc-200 px-6 py-2.5 text-sm font-semibold text-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300"
+            >
+              Discard changes
+            </button>
+          </div>
         </div>
       </div>
 
