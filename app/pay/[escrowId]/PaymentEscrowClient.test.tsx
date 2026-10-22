@@ -10,14 +10,29 @@ import { EscrowStatusConst } from "@/types";
 
 import { PaymentEscrowClient } from "./PaymentEscrowClient";
 
-const { connect } = vi.hoisted(() => ({ connect: vi.fn().mockResolvedValue(true) }));
+const { connect } = vi.hoisted(() => ({
+  connect: vi.fn().mockResolvedValue(true),
+  publicKey: "GBTESTPUBLICKEYXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+}));
 
 vi.mock("@/hooks/useWallet", () => ({
-  default: () => ({ connect, isLoading: false }),
+  default: () => ({ connect, isLoading: false, publicKey: connect ? "GBTESTPUBLICKEYXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" : null }),
 }));
 
 vi.mock("@/components/providers/NetworkProvider", () => ({
-  useNetwork: () => ({ network: "testnet", isTestnet: true, isMainnet: false, toggleNetwork: vi.fn(), setNetwork: vi.fn() }),
+  useNetwork: () => ({
+    network: "testnet",
+    isTestnet: true,
+    isMainnet: false,
+    toggleNetwork: vi.fn(),
+    setNetwork: vi.fn(),
+    config: {
+      rpcUrl: "https://soroban-testnet.stellar.org",
+      networkPassphrase: "Test SDF Network ; September 2015",
+      horizonUrl: "https://horizon-testnet.stellar.org",
+      stellarExpertPrefix: "testnet",
+    },
+  }),
   NetworkProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
@@ -26,8 +41,14 @@ vi.mock("@/lib/api", () => ({
 }));
 
 vi.mock("@/lib/stellar/freighter", () => ({
-  connectFreighter: vi.fn(),
+  connectFreighter: vi.fn().mockResolvedValue("GBTESTPUBLICKEYXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
   isFreighterInstalled: vi.fn().mockResolvedValue(true),
+  signTransaction: vi.fn().mockResolvedValue("SIGNED_XDR_MOCK"),
+}));
+
+vi.mock("@/components/payment/PaymentForm", () => ({
+  buildFundingTransactionXdr: vi.fn().mockResolvedValue("RAW_XDR_MOCK"),
+  submitTransaction: vi.fn().mockResolvedValue("mock_tx_hash_123456"),
 }));
 
 vi.mock("sonner", () => ({
@@ -104,6 +125,25 @@ describe("PaymentEscrowClient payment eligibility", () => {
     EXPIRED: "payment.expiredMessage",
   };
 
+  it("saves contact details and routes into the escrow funding pipeline", async () => {
+    render(<PaymentEscrowClient escrow={baseEscrow} escrowId={baseEscrow.id} />);
+
+    fireEvent.change(screen.getByLabelText(/Email address/), {
+      target: { value: "buyer@example.com" },
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Pay Now" }));
+    });
+
+    expect(patchBuyerContact).toHaveBeenCalledWith("escrow-1", {
+      email: "buyer@example.com",
+      emailReceipt: true,
+    });
+    expect(screen.getByRole("button", { name: "Pay with Freighter" })).toBeInTheDocument();
+    expect(screen.queryByText(/Freighter signature completed/i)).not.toBeInTheDocument();
+  });
+
   it.each(Object.values(EscrowStatusConst))(
     "only enables payment for pending escrows: %s",
     async (status) => {
@@ -121,8 +161,8 @@ describe("PaymentEscrowClient payment eligibility", () => {
         });
         await act(async () => { fireEvent.click(button); });
         expect(patchBuyerContact).toHaveBeenCalledOnce();
-        expect(isFreighterInstalled).toHaveBeenCalledOnce();
-        expect(connectFreighter).toHaveBeenCalledOnce();
+        expect(isFreighterInstalled).not.toHaveBeenCalled();
+        expect(connectFreighter).not.toHaveBeenCalled();
       } else {
         expect(button).toBeDisabled();
         expect(screen.getByText(i18n.t(guidance[status]!))).toBeInTheDocument();
