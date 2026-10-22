@@ -400,6 +400,8 @@ npm run type-check
 npm run lint
 ```
 
+Subscription provider tests cover cache freshness and expiry, explicit refetch after an upgrade, and FREE/loading/PRO states in `ProGate` and `UpgradeCTA`. Run this suite with `npm run test -- components/providers/SubscriptionProvider.test.tsx`.
+
 ### Test Coverage Goals
 
 - [ ] Wallet connect / disconnect flows
