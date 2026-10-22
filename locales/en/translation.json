@@ -204,7 +204,22 @@
     "orderNotFoundDesc": "We couldn't find an order with the ID:",
     "loadErrorTitle": "We couldn't load tracking status",
     "loadError": "Failed to load tracking status.",
-    "goToStage": "Go to stage {{stage}}"
+    "goToStage": "Go to stage {{stage}}",
+    "escrowMilestones": "Escrow milestones",
+    "escrowCompleted": "Escrow completed",
+    "escrowCompletedDesc": "The escrow has been settled",
+    "carrierTracking": "Carrier tracking",
+    "carrier": "Carrier",
+    "trackingNumber": "Tracking number",
+    "carrierStatus": "Carrier status",
+    "estimatedDelivery": "Estimated delivery",
+    "carrierEvents": "Carrier events",
+    "noCarrierEvents": "No carrier events are available yet.",
+    "noTracking": "Tracking details are not available yet. If your order has not shipped, check back after shipment.",
+    "carrierLoadErrorTitle": "We couldn’t load carrier tracking",
+    "carrierLoadError": "Carrier tracking is temporarily unavailable. Your escrow details are still available.",
+    "retry": "Check again",
+    "dateUnavailable": "Date unavailable"
   },
   "nav": {
     "dashboard": "Dashboard",
